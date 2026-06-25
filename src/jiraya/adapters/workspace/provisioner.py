@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from ...domain import RepoRef
-from ...ports import WorkspaceProvisioner
+from ...ports import WorkspaceProvisioner, WorkspaceProvisionError
 
 CommandRunner = Callable[[list[str]], None]
 
@@ -54,18 +54,46 @@ class GitWorkspaceProvisioner(WorkspaceProvisioner):
 
     def provision(self, repo: RepoRef, ticket_key: str) -> str:
         if not repo.clone_url:
-            raise ValueError(f"Repo {repo.key} has no clone_url")
+            raise WorkspaceProvisionError(
+                f"Repo {repo.key} has no clone_url.",
+                command=("git", "clone", "<missing-url>"),
+            )
         checkout = self._root / _slug(ticket_key)
         if not checkout.exists():
             cmd = ["git", "clone", "--depth", str(self._depth)]
             if repo.default_branch:
                 cmd += ["--branch", repo.default_branch]
             cmd += [repo.clone_url, str(checkout)]
-            self._runner(cmd)
+            try:
+                self._runner(cmd)
+            except WorkspaceProvisionError:
+                _cleanup(checkout)
+                raise
+            except subprocess.CalledProcessError as exc:
+                _cleanup(checkout)
+                raise WorkspaceProvisionError(
+                    f"git clone of {repo.clone_url} failed.",
+                    command=tuple(cmd),
+                    returncode=exc.returncode,
+                    stderr=exc.stderr or "",
+                ) from exc
+            except OSError as exc:
+                _cleanup(checkout)
+                raise WorkspaceProvisionError(
+                    f"git clone of {repo.clone_url} failed: {exc}.",
+                    command=tuple(cmd),
+                ) from exc
         return str(checkout / repo.path) if repo.path else str(checkout)
+
+
+def _cleanup(checkout: Path) -> None:
+    """Remove a partial checkout so a later retry can re-clone cleanly."""
+    shutil.rmtree(checkout, ignore_errors=True)
 
 
 def _default_runner(cmd: list[str]) -> None:
     if shutil.which(cmd[0]) is None:
-        raise RuntimeError(f"'{cmd[0]}' not found on PATH")
+        raise WorkspaceProvisionError(
+            f"'{cmd[0]}' not found on PATH.", command=tuple(cmd)
+        )
     subprocess.run(cmd, check=True, capture_output=True, text=True)

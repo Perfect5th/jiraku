@@ -81,12 +81,51 @@ class LearnedRulesStore(Protocol):
         """Return all learned rules (for inspection / persistence)."""
 
 
+class WorkspaceProvisionError(Exception):
+    """Raised by a :class:`WorkspaceProvisioner` when provisioning fails.
+
+    Carries the failing command and its output so the failure can be surfaced
+    to a human, who can examine it and supply a corrected upstream URL.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        command: tuple[str, ...] = (),
+        returncode: int | None = None,
+        stderr: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.command = command
+        self.returncode = returncode
+        self.stderr = stderr
+
+    @property
+    def command_line(self) -> str:
+        return " ".join(self.command)
+
+    def details(self) -> tuple[str, ...]:
+        """Human-readable detail lines for the inbox entry."""
+        lines: list[str] = []
+        if self.command:
+            lines.append(f"$ {self.command_line}")
+        if self.returncode is not None:
+            lines.append(f"exit code: {self.returncode}")
+        for line in (self.stderr or "").strip().splitlines():
+            if line.strip():
+                lines.append(line.strip())
+        return tuple(lines[:8])
+
+
 @runtime_checkable
 class WorkspaceProvisioner(Protocol):
     """Provision a local working copy for a resolved repo (``git clone`` + path).
 
     Returns the local workspace path. Implementations may be no-ops (dry-run)
-    that only report the intended path without cloning.
+    that only report the intended path without cloning. A failed clone must
+    raise :class:`WorkspaceProvisionError`.
     """
 
     def provision(self, repo: RepoRef, ticket_key: str) -> str: ...

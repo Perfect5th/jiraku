@@ -3,7 +3,14 @@ from __future__ import annotations
 from textual.widgets import Button, DataTable, Input, RichLog, Static
 
 from jiraya.composition import JirayaConfig
-from jiraya.domain import InboxStatus, Priority, Ticket
+from jiraya.domain import (
+    EscalationStage,
+    InboxEntry,
+    InboxStatus,
+    Priority,
+    RepoRef,
+    Ticket,
+)
 from jiraya.tui import JirayaApp
 from jiraya.tui.detail import InboxDetailScreen
 
@@ -103,6 +110,32 @@ async def test_inbox_detail_modal_rerun_resolves_entry(wait_for):
             lambda: app._system.inbox.get(entry_id).status is InboxStatus.RESOLVED,
         )
         assert ok
+
+
+async def test_detail_modal_shows_clone_command_for_provisioning_entry(wait_for):
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        entry = InboxEntry(
+            id="p1", ticket_key="API-99",
+            reason="git clone failed — examine the command and supply a corrected URL.",
+            stage=EscalationStage.PROVISIONING,
+            repo=RepoRef("acme/api", "https://example.invalid/api.git"),
+            details=("$ git clone --depth 1 https://example.invalid/api.git /tmp/ws/API-99",
+                     "exit code: 128", "fatal: repository not found"),
+        )
+        app._inbox_entries[entry.id] = entry
+        app.push_screen(
+            InboxDetailScreen(entry, dry_run=False),
+            lambda r: app._on_detail_result(entry.id, r),
+        )
+        await pilot.pause()
+        detail = str(app.screen.query_one("#detail", Static).render())
+        assert "provisioning" in detail.lower()
+        assert "git clone" in detail
+        assert "repository not found" in detail
+        # A repo-needing exception focuses the clone-URL input.
+        assert app.screen.focused is app.screen.query_one("#repo-url", Input)
 
 
 def _make_app_with_repo_gap() -> JirayaApp:

@@ -98,7 +98,10 @@ same project resolve automatically.
 
 When a ticket transitions, a `WorkspaceProvisioner` hands the worker agent a
 local checkout. The default is a no-op that only reports the intended path;
-`--provision` performs a real `git clone` (never in dry-run).
+`--provision` performs a real `git clone` (never in dry-run). Provisioning
+happens **before** the status change, so a **failed `git clone` is surfaced to
+the inbox** (stage `provisioning`) with the exact command and error captured —
+respond with a corrected repo **clone URL** to teach the resolver and re-run.
 
 ## Work agent (implement + open a PR)
 

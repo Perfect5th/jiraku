@@ -16,6 +16,7 @@ from .outbound import (
     WorkAgentRunner,
     WorkerAgent,
     WorkspaceProvisioner,
+    WorkspaceProvisionError,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "WorkAgentRunner",
     "WorkerAgent",
     "WorkspaceProvisioner",
+    "WorkspaceProvisionError",
 ]

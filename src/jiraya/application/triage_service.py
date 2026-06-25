@@ -48,6 +48,7 @@ from ..ports import (
     TicketSource,
     WorkAgentRunner,
     WorkspaceProvisioner,
+    WorkspaceProvisionError,
 )
 from .router import AgentRouter
 
@@ -307,6 +308,26 @@ class TriageService:
         result,
         resolution: RepoResolution | None = None,
     ) -> TriageOutcome:
+        # Provision the workspace *before* committing the status change so a
+        # clone failure can be surfaced for a human to fix (e.g. a corrected
+        # upstream URL) without leaving the ticket half-started.
+        try:
+            workspace = self._provision(ticket, agent, resolution)
+        except WorkspaceProvisionError as exc:
+            self._log(agent, ticket.key, f"Workspace provisioning failed: {exc.message}",
+                      level=ActivityLevel.ERROR)
+            return self._escalate(
+                ticket,
+                classification,
+                reason=(f"git clone failed for {resolution.repo if resolution else 'repo'}: "
+                        f"{exc.message} — examine the command and supply a corrected "
+                        f"repo upstream URL."),
+                agent=agent,
+                stage=EscalationStage.PROVISIONING,
+                resolution=resolution,
+                validation_details=exc.details(),
+            )
+
         try:
             updated = self._source.transition(ticket.key, TicketStatus.IN_PROGRESS)
         except Exception as exc:  # noqa: BLE001 - real workflows vary; degrade safely
@@ -334,8 +355,7 @@ class TriageService:
             f"Validated and moved to In Progress: {result.summary}",
             level=ActivityLevel.SUCCESS,
         )
-        # The worker agent "starts" by being handed a local workspace, then runs.
-        workspace = self._provision(ticket, agent, resolution)
+        # The worker agent runs in the provisioned workspace.
         work = self._run_work(ticket, classification, agent, resolution, workspace)
         return TriageOutcome(
             ticket_key=ticket.key,
@@ -381,12 +401,8 @@ class TriageService:
     ) -> str:
         if self._provisioner is None or resolution is None or resolution.repo is None:
             return ""
-        try:
-            workspace = self._provisioner.provision(resolution.repo, ticket.key)
-        except Exception as exc:  # noqa: BLE001 - cloning is best-effort
-            self._log(agent, ticket.key, f"Workspace provisioning failed: {exc}",
-                      level=ActivityLevel.ERROR)
-            return ""
+        # WorkspaceProvisionError propagates to the caller, which escalates it.
+        workspace = self._provisioner.provision(resolution.repo, ticket.key)
         self._log(
             agent,
             ticket.key,
