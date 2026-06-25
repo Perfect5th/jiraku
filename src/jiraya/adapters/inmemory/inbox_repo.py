@@ -21,6 +21,10 @@ class InMemoryInboxRepository(InboxRepository):
             self._entries[entry.id] = entry
             self._order.append(entry.id)
 
+    def get(self, entry_id: str) -> InboxEntry | None:
+        with self._lock:
+            return self._entries.get(entry_id)
+
     def all(self) -> list[InboxEntry]:
         with self._lock:
             return [self._entries[i] for i in reversed(self._order)]

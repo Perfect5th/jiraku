@@ -25,6 +25,7 @@ from ..domain import (
     ActivityLevel,
     ActivityLogged,
     DomainEvent,
+    InboxEntry,
     InboxStatus,
     MetricsUpdated,
     PollCycleStarted,
@@ -40,25 +41,37 @@ from ..domain import (
     TriageMetrics,
 )
 from ..adapters.inmemory import InMemoryTicketSource, random_ticket
+from .detail import InboxDetailScreen
+
+# Explicit truecolor palette chosen for ≥4.5:1 contrast on both the normal dark
+# rows and the muted selected-row highlight (so colours never wash out when a
+# row is highlighted), and independent of the terminal's ANSI theme.
+_C_BUG = "#ff8080"
+_C_FEATURE = "#5cc8ff"
+_C_DOC = "#4fe06d"
+_C_UNKNOWN = "#ffd24a"
+_C_BLUE = "#6cb3ff"
+_C_DIM = "#aab0b8"
+_C_TEXT = "#e6e6e6"
 
 _CATEGORY_STYLE = {
-    TicketCategory.BUG: "bold red",
-    TicketCategory.FEATURE_REQUEST: "bold cyan",
-    TicketCategory.DOCUMENTATION: "bold green",
-    TicketCategory.UNKNOWN: "bold yellow",
+    TicketCategory.BUG: f"bold {_C_BUG}",
+    TicketCategory.FEATURE_REQUEST: f"bold {_C_FEATURE}",
+    TicketCategory.DOCUMENTATION: f"bold {_C_DOC}",
+    TicketCategory.UNKNOWN: f"bold {_C_UNKNOWN}",
 }
 _STATUS_STYLE = {
-    TicketStatus.UNTRIAGED: "grey62",
-    TicketStatus.TODO: "white",
-    TicketStatus.IN_PROGRESS: "bold green",
-    TicketStatus.NEEDS_REVIEW: "bold yellow",
-    TicketStatus.DONE: "blue",
+    TicketStatus.UNTRIAGED: "#c7ccd1",
+    TicketStatus.TODO: "#ffffff",
+    TicketStatus.IN_PROGRESS: f"bold {_C_DOC}",
+    TicketStatus.NEEDS_REVIEW: f"bold {_C_UNKNOWN}",
+    TicketStatus.DONE: _C_BLUE,
 }
 _LEVEL_STYLE = {
-    ActivityLevel.INFO: "grey70",
-    ActivityLevel.SUCCESS: "green",
-    ActivityLevel.WARNING: "yellow",
-    ActivityLevel.ERROR: "bold red",
+    ActivityLevel.INFO: _C_DIM,
+    ActivityLevel.SUCCESS: _C_DOC,
+    ActivityLevel.WARNING: _C_UNKNOWN,
+    ActivityLevel.ERROR: f"bold {_C_BUG}",
 }
 _LEVEL_GLYPH = {
     ActivityLevel.INFO: "•",
@@ -99,11 +112,29 @@ class JirayaApp(App):
         border: round $warning;
     }
     .panel-title { text-style: bold; }
+
+    /* Selected-row highlight: a muted dark band (instead of the default bright
+       accent) so the coloured cell text keeps the same contrast it has on the
+       normal dark rows. */
+    DataTable > .datatable--cursor {
+        background: #282c34;
+        color: #ffffff;
+        text-style: bold;
+    }
+    DataTable:focus > .datatable--cursor {
+        background: #343a47;
+        color: #ffffff;
+        text-style: bold;
+    }
+    DataTable > .datatable--hover {
+        background: #23262e;
+    }
     """
 
     BINDINGS = [
         ("p", "poll", "Poll now"),
         ("g", "generate", "New ticket"),
+        ("d", "detail", "Detail / respond"),
         ("r", "resolve", "Resolve inbox"),
         ("q", "quit", "Quit"),
     ]
@@ -122,6 +153,7 @@ class JirayaApp(App):
         self._poke = asyncio.Event()
         self._unsubscribe = None
         self._ticket_rows: set[str] = set()
+        self._inbox_entries: dict[str, InboxEntry] = {}
         self._cols: dict[str, object] = {}
         self._inbox_cols: dict[str, object] = {}
 
@@ -145,9 +177,9 @@ class JirayaApp(App):
         self._cols = dict(zip(["key", "project", "type", "category", "status", "agent", "outcome"], cols))
 
         inbox = self.query_one("#inbox", DataTable)
-        icols = inbox.add_columns("Ticket", "Category", "Reason")
-        self._inbox_cols = dict(zip(["ticket", "category", "reason"], icols))
-        inbox.border_title = "Inbox — exceptions for human review"
+        icols = inbox.add_columns("Ticket", "Category", "Agent", "Reason")
+        self._inbox_cols = dict(zip(["ticket", "category", "agent", "reason"], icols))
+        inbox.border_title = "Inbox — exceptions (d: detail/respond · r: resolve)"
 
         self.query_one("#activity", RichLog).border_title = "Agent activity"
         tickets.border_title = "Tickets"
@@ -207,12 +239,12 @@ class JirayaApp(App):
             self._update(event.ticket_key, "agent", event.agent)
         elif isinstance(event, TicketTransitioned):
             self._set_status(event.ticket_key, event.to_status or TicketStatus.IN_PROGRESS)
-            self._update(event.ticket_key, "outcome", Text("In Progress ✓", style="green"))
+            self._update(event.ticket_key, "outcome", Text("In Progress ✓", style=f"bold {_C_DOC}"))
         elif isinstance(event, TicketEscalated):
             entry = event.entry
             if entry is not None:
                 # Escalation surfaces to the inbox without changing Jira status.
-                self._update(entry.ticket_key, "outcome", Text("Review ⚠", style="yellow"))
+                self._update(entry.ticket_key, "outcome", Text("Review ⚠", style=f"bold {_C_UNKNOWN}"))
                 self._add_inbox_row(entry)
         elif isinstance(event, ActivityLogged) and event.activity is not None:
             a = event.activity
@@ -224,7 +256,7 @@ class JirayaApp(App):
         elif isinstance(event, TicketTriaged) and event.outcome is not None:
             o = event.outcome
             if o.action is TriageAction.ESCALATED:
-                self._update(o.ticket_key, "outcome", Text("Review ⚠", style="yellow"))
+                self._update(o.ticket_key, "outcome", Text("Review ⚠", style=f"bold {_C_UNKNOWN}"))
 
     # -- widget helpers -------------------------------------------------------
 
@@ -238,10 +270,10 @@ class JirayaApp(App):
             Text(key, style="bold"),
             project,
             issue_type or "—",
-            Text("…", style="grey50"),
+            Text("…", style=_C_DIM),
             Text(str(status), style=_STATUS_STYLE.get(status, "white")),
             "—",
-            Text("queued", style="grey50"),
+            Text("queued", style=_C_DIM),
             key=key,
         )
         self._ticket_rows.add(key)
@@ -260,10 +292,13 @@ class JirayaApp(App):
             pass
 
     def _add_inbox_row(self, entry) -> None:
+        self._inbox_entries[entry.id] = entry
         table = self.query_one("#inbox", DataTable)
+        agent = entry.agent or "—"
         table.add_row(
             Text(entry.ticket_key, style="bold"),
             Text(str(entry.category), style=_CATEGORY_STYLE.get(entry.category, "white")),
+            agent,
             entry.reason,
             key=entry.id,
         )
@@ -273,7 +308,7 @@ class JirayaApp(App):
         ts = datetime.now().strftime("%H:%M:%S")
         glyph = _LEVEL_GLYPH[level]
         style = _LEVEL_STYLE[level]
-        log.write(f"[grey50]{ts}[/] [{style}]{glyph}[/] {markup}")
+        log.write(f"[grey62]{ts}[/] [{style}]{glyph}[/] {markup}")
 
     def _render_metrics(self, m: TriageMetrics) -> None:
         last = m.last_poll_at.astimezone().strftime("%H:%M:%S") if m.last_poll_at else "—"
@@ -306,20 +341,96 @@ class JirayaApp(App):
             self._log_line("Ticket injection only available with the in-memory source.",
                            ActivityLevel.WARNING)
 
-    def action_resolve(self) -> None:
+    def _selected_inbox_id(self) -> str | None:
         table = self.query_one("#inbox", DataTable)
         if table.row_count == 0:
-            return
-        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
-        entry_id = cell_key.row_key.value
+            return None
+        try:
+            cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
+        except Exception:  # noqa: BLE001 - no valid cursor
+            return None
+        value = cell_key.row_key.value
+        return str(value) if value is not None else None
+
+    def _remove_inbox_row(self, entry_id: str) -> None:
+        table = self.query_one("#inbox", DataTable)
+        try:
+            table.remove_row(entry_id)
+        except Exception:  # noqa: BLE001 - already gone
+            pass
+        self._inbox_entries.pop(entry_id, None)
+
+    def action_resolve(self) -> None:
+        entry_id = self._selected_inbox_id()
         if entry_id is None:
             return
-        resolved = self._system.inbox.resolve(str(entry_id), "Resolved via dashboard")
+        resolved = self._system.inbox.resolve(entry_id, "Resolved via dashboard")
         if resolved is not None and resolved.status is InboxStatus.RESOLVED:
-            table.remove_row(cell_key.row_key)
+            self._remove_inbox_row(entry_id)
             self._log_line(f"Resolved inbox item for [b]{resolved.ticket_key}[/].",
                            ActivityLevel.SUCCESS)
             self._render_metrics(self._system.service.metrics.snapshot())
+
+    def action_detail(self) -> None:
+        """Open the expandable detail + respond modal for the selected entry."""
+        entry_id = self._selected_inbox_id()
+        if entry_id is None:
+            self._log_line("No inbox item selected.", ActivityLevel.INFO)
+            return
+        entry = self._inbox_entries.get(entry_id) or self._system.inbox.get(entry_id)
+        if entry is None:
+            return
+        self.push_screen(
+            InboxDetailScreen(entry, dry_run=self._system.dry_run),
+            lambda result: self._on_detail_result(entry_id, result),
+        )
+
+    def _on_detail_result(self, entry_id: str, result: dict | None) -> None:
+        if not result:
+            return
+        action = result.get("action")
+        note = result.get("note", "")
+        if action == "resolve":
+            resolved = self._system.inbox.resolve(entry_id, note or "Resolved via dashboard")
+            if resolved is not None:
+                self._remove_inbox_row(entry_id)
+                self._log_line(f"Resolved inbox item for [b]{resolved.ticket_key}[/].",
+                               ActivityLevel.SUCCESS)
+                self._render_metrics(self._system.service.metrics.snapshot())
+            return
+        flags = {
+            "comment": (True, False),
+            "rerun": (False, True),
+            "both": (True, True),
+        }.get(action)
+        if flags is None:
+            return
+        post_comment, rerun = flags
+        if (post_comment and not note):
+            self._log_line("Enter a note to post as a comment.", ActivityLevel.WARNING)
+            return
+        self.run_worker(
+            self._respond(entry_id, note, post_comment, rerun),
+            name=f"respond-{entry_id}",
+            exclusive=False,
+        )
+
+    async def _respond(
+        self, entry_id: str, note: str, post_comment: bool, rerun: bool
+    ) -> None:
+        try:
+            response = await asyncio.to_thread(
+                self._system.service.respond_to_inbox,
+                entry_id, note, post_comment=post_comment, rerun=rerun,
+            )
+        except Exception as exc:  # noqa: BLE001 - surface, don't crash the UI
+            self._log_line(f"Respond failed: {exc}", ActivityLevel.ERROR)
+            return
+        # Re-running resolves the original entry; drop its (now stale) row. Any
+        # fresh escalation has already been added via the event stream.
+        if response.retriaged:
+            self._remove_inbox_row(entry_id)
+        self._render_metrics(self._system.service.metrics.snapshot())
 
 
 def run(config: JirayaConfig | None = None, *, poll_interval: float = 20.0) -> None:

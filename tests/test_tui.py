@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from textual.widgets import DataTable, RichLog, Static
+from textual.widgets import Button, DataTable, Input, RichLog, Static
 
 from jiraya.composition import JirayaConfig
+from jiraya.domain import InboxStatus
 from jiraya.tui import JirayaApp
+from jiraya.tui.detail import InboxDetailScreen
 
 
 def _make_app() -> JirayaApp:
@@ -56,3 +58,48 @@ async def test_resolve_action_clears_inbox_row(wait_for):
         ok = await wait_for(pilot, lambda: inbox.row_count == 3)
         assert ok
         assert len(app._system.inbox.open_entries()) == open_before - 1
+
+
+async def test_inbox_detail_modal_shows_details_and_posts_comment(wait_for):
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        entry_id = app._selected_inbox_id()
+        assert entry_id is not None
+        ticket_key = app._inbox_entries[entry_id].ticket_key
+
+        app.action_detail()
+        await pilot.pause()
+        assert isinstance(app.screen, InboxDetailScreen)
+        # The expandable detail view surfaces the persisted agent + rationale.
+        detail = str(app.screen.query_one("#detail", Static).render())
+        assert "Agent" in detail
+        assert "Rationale" in detail
+
+        app.screen.query_one("#note", Input).value = "Please add reproduction steps."
+        app.screen.query_one("#comment", Button).press()
+
+        ok = await wait_for(pilot, lambda: bool(app._system.source.comments(ticket_key)))
+        assert ok
+        assert app._system.source.comments(ticket_key) == ["Please add reproduction steps."]
+        # Comment-only keeps the entry open for the reporter to respond.
+        assert app._system.inbox.get(entry_id).status is InboxStatus.OPEN
+
+
+async def test_inbox_detail_modal_rerun_resolves_entry(wait_for):
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        entry_id = app._selected_inbox_id()
+        assert entry_id is not None
+
+        app.action_detail()
+        await pilot.pause()
+        app.screen.query_one("#note", Input).value = "Reclassify as a bug, please."
+        app.screen.query_one("#rerun", Button).press()
+
+        ok = await wait_for(
+            pilot,
+            lambda: app._system.inbox.get(entry_id).status is InboxStatus.RESOLVED,
+        )
+        assert ok

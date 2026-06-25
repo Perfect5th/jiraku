@@ -38,7 +38,7 @@ Labels: {labels}
 Summary: {summary}
 Description:
 {description}
-"""
+{hint_block}"""
 
 _CATEGORY_BY_NAME = {c.value.lower(): c for c in TicketCategory}
 
@@ -88,7 +88,12 @@ class CopilotCliClassifier(Classifier):
         self._runner = runner or _default_runner(self._command, timeout)
         self._fallback = fallback
 
-    def classify(self, ticket: Ticket) -> Classification:
+    def classify(self, ticket: Ticket, hint: str | None = None) -> Classification:
+        hint_block = (
+            f"\nHuman reviewer hint (authoritative, weigh heavily): {hint}\n"
+            if hint
+            else ""
+        )
         prompt = _PROMPT_TEMPLATE.format(
             key=ticket.key,
             project=ticket.project,
@@ -98,13 +103,14 @@ class CopilotCliClassifier(Classifier):
             labels=", ".join(ticket.labels) or "none",
             summary=ticket.summary,
             description=ticket.description,
+            hint_block=hint_block,
         )
         try:
             raw = self._runner(prompt)
             return self._parse(raw, ticket)
         except (CopilotUnavailableError, ValueError) as exc:
             if self._fallback is not None:
-                return self._fallback.classify(ticket)
+                return self._fallback.classify(ticket, hint)
             raise CopilotUnavailableError(
                 f"Copilot classification failed for {ticket.key}: {exc}"
             ) from exc

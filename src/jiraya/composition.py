@@ -20,7 +20,7 @@ from .adapters.inmemory import (
 )
 from .adapters.jira import JiraRestTicketSource
 from .application import AgentRouter, TriagePoller, TriageService
-from .domain import ActivityLevel, ActivityLogged, AgentActivity, TicketStatus
+from .domain import ActivityLevel, ActivityLogged, AgentActivity
 from .ports import Classifier, EventBus, InboxRepository, TicketSource
 
 _DEFAULT_JQL = 'status in ("To Do", "Untriaged") ORDER BY created ASC'
@@ -130,7 +130,9 @@ def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
     dry_run = config.dry_run and mode == "jira"
     if dry_run:
         source = ReadOnlyTicketSource(
-            source, on_transition=_make_dry_run_observer(bus)
+            source,
+            on_transition=_make_dry_run_logger(bus, "Would transition to {0}"),
+            on_comment=_make_dry_run_logger(bus, "Would post comment"),
         )
 
     service = TriageService(
@@ -160,14 +162,14 @@ def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
     )
 
 
-def _make_dry_run_observer(bus: EventBus):
-    def observer(key: str, status: TicketStatus) -> None:
+def _make_dry_run_logger(bus: EventBus, template: str):
+    def observer(key: str, arg) -> None:
         bus.publish(
             ActivityLogged(
                 activity=AgentActivity(
                     agent="dry-run",
                     ticket_key=key,
-                    message=f"Would transition to {status} (dry-run; Jira not modified).",
+                    message=f"{template.format(arg)} (dry-run; Jira not modified).",
                     level=ActivityLevel.INFO,
                 )
             )

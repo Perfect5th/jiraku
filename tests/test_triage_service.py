@@ -36,7 +36,7 @@ class StubClassifier:
     def __init__(self, classification: Classification):
         self._c = classification
 
-    def classify(self, ticket):
+    def classify(self, ticket, hint=None):
         return self._c
 
 
@@ -149,6 +149,21 @@ def test_agent_needs_human_is_escalated():
     outcome = service.triage_ticket(ticket)
     assert outcome.action is TriageAction.ESCALATED
     assert inbox.open_entries()[0].reason == "needs repro"
+
+
+def test_escalation_persists_agent_details_and_rationale():
+    cls = Classification(TicketCategory.BUG, "A", 0.9, rationale="looks buggy")
+    agent = StubAgent(
+        TicketCategory.BUG,
+        ValidationResult(actionable=False, needs_human=True, summary="no repro",
+                         details=("missing steps", "too short")),
+    )
+    service, source, inbox, events, ticket = _build(cls, [agent])
+    service.triage_ticket(ticket)
+    entry = inbox.open_entries()[0]
+    assert entry.agent == "stub-agent"
+    assert entry.details == ("missing steps", "too short")
+    assert entry.rationale == "looks buggy"
 
 
 def test_triage_batch_records_metrics():

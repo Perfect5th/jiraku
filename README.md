@@ -70,8 +70,25 @@ Launch the real-time dashboard (default command):
 uv run jiraya            # or: uv run jiraya tui
 ```
 
-Dashboard keys: `p` poll now · `g` inject a demo ticket · `r` resolve the
-selected inbox item · `q` quit.
+Dashboard keys: `p` poll now · `g` inject a demo ticket · `d` open the
+detail/respond view for the selected inbox item · `r` resolve it · `q` quit.
+
+### Inbox detail & responding
+
+Select an inbox exception and press `d` to open an expandable detail view that
+shows the full picture the harness captured: the worker **agent**, the
+classifier's **rationale**, the specific **validation details** (e.g. "no
+reproduction steps"), category and confidence. From there you can **respond**
+with a note that either:
+
+- **posts a comment** back to the Jira issue (e.g. asking the reporter for
+  reproduction steps), and/or
+- **re-runs triage** using your note as an authoritative hint — so telling it
+  "this is actually a bug" re-classifies and routes the ticket accordingly.
+
+Re-running resolves the original inbox item (a fresh one is raised only if the
+ticket still can't be actioned). In dry-run mode comments are **not** posted and
+re-triage performs no writes.
 
 > The interactive TUI needs a real terminal. In CI / headless contexts use
 > `jiraya run` (below) or drive the app via Textual's `run_test()` pilot.

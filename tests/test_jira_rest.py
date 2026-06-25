@@ -148,3 +148,22 @@ def test_transition_without_match_raises():
 def test_get_returns_none_on_404():
     src = JiraRestTicketSource(base_url="https://x", client=_workflow_client({"status": "Untriaged"}))
     assert src.get("MISSING") is None
+
+
+def test_add_comment_posts_adf_and_returns_id():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/rest/api/3/issue/PROJ-1/comment":
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(201, json={"id": "10010"})
+        return httpx.Response(404)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://x")
+    src = JiraRestTicketSource(base_url="https://x", client=client)
+
+    cid = src.add_comment("PROJ-1", "needs repro steps")
+    assert cid == "10010"
+    body = captured["body"]["body"]
+    assert body["type"] == "doc"
+    assert body["content"][0]["content"][0]["text"] == "needs repro steps"

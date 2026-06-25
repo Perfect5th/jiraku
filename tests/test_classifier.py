@@ -61,6 +61,26 @@ def test_keyword_classifier_issue_type_story_is_feature():
     assert KeywordClassifier().classify(ticket).category is TicketCategory.FEATURE_REQUEST
 
 
+def test_keyword_classifier_respects_reviewer_hint():
+    t = _ticket("Investigate the thing", "Please look into this when you can.")
+    assert KeywordClassifier().classify(t).category is TicketCategory.UNKNOWN
+    hinted = KeywordClassifier().classify(t, hint="this is a bug, it crashes on save")
+    assert hinted.category is TicketCategory.BUG
+    assert "hint" in hinted.rationale.lower()
+
+
+def test_copilot_classifier_includes_hint_in_prompt():
+    seen = {}
+
+    def runner(prompt: str) -> str:
+        seen["prompt"] = prompt
+        return '{"category": "Bug", "confidence": 0.9}'
+
+    CopilotCliClassifier(runner=runner).classify(_ticket("x", "y"), hint="treat as a bug")
+    assert "treat as a bug" in seen["prompt"]
+    assert "reviewer hint" in seen["prompt"].lower()
+
+
 def test_extract_json_from_noisy_output():
     raw = "thinking...\nHere is the result:\n{\"category\": \"Bug\", \"confidence\": 0.8}\nbye"
     assert _extract_json(raw) == {"category": "Bug", "confidence": 0.8}

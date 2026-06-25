@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from jiraya.adapters.inmemory import (
     InMemoryEventBus,
     InMemoryInboxRepository,
@@ -33,6 +35,21 @@ def test_ticket_source_add_and_get_unknown():
     src.add(random_ticket())
     assert len(src.fetch_untriaged()) == 1
     assert src.get("nope") is None
+
+
+def test_ticket_source_add_comment():
+    src = InMemoryTicketSource()
+    key = src.fetch_untriaged()[0].key
+    cid = src.add_comment(key, "first note")
+    assert cid
+    src.add_comment(key, "second note")
+    assert src.comments(key) == ["first note", "second note"]
+
+
+def test_ticket_source_add_comment_unknown_key_raises():
+    src = InMemoryTicketSource(tickets=[])
+    with pytest.raises(KeyError):
+        src.add_comment("NOPE-1", "x")
 
 
 def test_inbox_repository_lifecycle():

@@ -43,3 +43,16 @@ def test_readonly_unknown_key_raises():
     ro = ReadOnlyTicketSource(InMemoryTicketSource())
     with pytest.raises(KeyError):
         ro.transition("NOPE-1", TicketStatus.IN_PROGRESS)
+
+
+def test_readonly_suppresses_comments():
+    inner = InMemoryTicketSource()
+    seen = []
+    ro = ReadOnlyTicketSource(inner, on_comment=lambda k, b: seen.append((k, b)))
+    key = inner.fetch_untriaged()[0].key
+
+    cid = ro.add_comment(key, "hello")
+
+    assert cid == ""  # nothing posted
+    assert inner.comments(key) == []  # wrapped source untouched
+    assert seen == [(key, "hello")]  # observer notified

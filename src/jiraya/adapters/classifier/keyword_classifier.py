@@ -57,6 +57,7 @@ _TYPE_CATEGORY: dict[str, TicketCategory] = {
 }
 
 _TYPE_WEIGHT = 3  # an explicit issue type outweighs prose and labels
+_HINT_WEIGHT = 4  # an explicit human reviewer note is authoritative
 
 
 class KeywordClassifier(Classifier):
@@ -64,7 +65,7 @@ class KeywordClassifier(Classifier):
 
     source_name = "keyword"
 
-    def classify(self, ticket: Ticket) -> Classification:
+    def classify(self, ticket: Ticket, hint: str | None = None) -> Classification:
         haystack = f"{ticket.summary}\n{ticket.description}".lower()
         scores: dict[TicketCategory, int] = {c: 0 for c in _SIGNALS}
 
@@ -79,6 +80,16 @@ class KeywordClassifier(Classifier):
         type_category = _TYPE_CATEGORY.get(ticket.issue_type.strip().lower())
         if type_category is not None:
             scores[type_category] += _TYPE_WEIGHT
+
+        # A human reviewer's note is authoritative: any category signal in the
+        # hint outweighs everything else.
+        hint_category: TicketCategory | None = None
+        if hint:
+            hint_text = hint.lower()
+            for category, signals in _SIGNALS.items():
+                if any(s in hint_text for s in signals):
+                    scores[category] += _HINT_WEIGHT
+                    hint_category = category
 
         best = max(scores, key=lambda c: scores[c])
         best_score = scores[best]
@@ -97,7 +108,9 @@ class KeywordClassifier(Classifier):
             confidence *= 0.7
 
         rationale = f"Matched {best_score} '{best}' signal(s)"
-        if type_category is best:
+        if hint_category is best:
+            rationale += " (reviewer hint)"
+        elif type_category is best:
             rationale += f" (Jira issue type '{ticket.issue_type}')"
         return Classification(
             category=best,

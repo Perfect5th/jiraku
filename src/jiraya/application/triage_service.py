@@ -20,6 +20,7 @@ from ..domain import (
     ActivityLogged,
     Classification,
     InboxEntry,
+    InboxResponse,
     MetricsUpdated,
     Ticket,
     TicketCategory,
@@ -76,15 +77,81 @@ class TriageService:
     def triage_batch(self, tickets: list[Ticket]) -> list[TriageOutcome]:
         return [self.triage_ticket(t) for t in tickets]
 
+    def respond_to_inbox(
+        self,
+        entry_id: str,
+        note: str,
+        *,
+        post_comment: bool = False,
+        rerun: bool = False,
+    ) -> InboxResponse:
+        """Act on a human's response to a surfaced exception.
+
+        Optionally posts ``note`` as a comment back to the Jira issue and/or
+        re-runs triage for the ticket using ``note`` as an authoritative hint.
+        Re-running resolves the original inbox entry (a fresh one is created if
+        the ticket still cannot be actioned).
+        """
+        entry = self._inbox.get(entry_id)
+        if entry is None:
+            raise KeyError(f"Unknown inbox entry: {entry_id}")
+
+        note = (note or "").strip()
+        commented = False
+        comment_id: str | None = None
+        retriaged = False
+        outcome: TriageOutcome | None = None
+
+        if post_comment and note:
+            comment_id = self._source.add_comment(entry.ticket_key, note)
+            commented = True
+            if comment_id:
+                self._log("reviewer", entry.ticket_key,
+                          f"Posted comment to Jira (id {comment_id}).",
+                          level=ActivityLevel.SUCCESS)
+
+        if rerun:
+            self._inbox.resolve(
+                entry_id,
+                f"Re-triaged with reviewer note: {note}" if note else "Re-triaged",
+            )
+            ticket = self._source.get(entry.ticket_key)
+            if ticket is not None:
+                self._log("reviewer", entry.ticket_key,
+                          "Re-running triage with reviewer note as a hint.",
+                          level=ActivityLevel.INFO)
+                outcome = self.triage_ticket(ticket, hint=note or None)
+                retriaged = True
+            else:
+                self._log("reviewer", entry.ticket_key,
+                          "Could not re-run triage: ticket not found.",
+                          level=ActivityLevel.ERROR)
+            # Refresh the open-inbox count in any dashboards.
+            self._events.publish(MetricsUpdated(metrics=self._metrics.snapshot()))
+
+        final_entry = self._inbox.get(entry_id) or entry
+        return InboxResponse(
+            entry=final_entry,
+            note=note,
+            commented=commented,
+            comment_id=comment_id,
+            retriaged=retriaged,
+            outcome=outcome,
+        )
+
     def note_poll_cycle(self, at=None) -> None:
         """Record that a polling cycle ran (owned here so metrics stay internal)."""
         self._metrics.poll_cycles += 1
         self._metrics.last_poll_at = at
         self._events.publish(MetricsUpdated(metrics=self._metrics.snapshot()))
 
-    def triage_ticket(self, ticket: Ticket) -> TriageOutcome:
-        """Run a single ticket through the full triage workflow."""
-        classification = self._classify(ticket)
+    def triage_ticket(self, ticket: Ticket, hint: str | None = None) -> TriageOutcome:
+        """Run a single ticket through the full triage workflow.
+
+        ``hint`` is an optional authoritative note from a human reviewer, used
+        when re-triaging from the dashboard "respond" action.
+        """
+        classification = self._classify(ticket, hint)
 
         # 1. Confidence gate — unclear intent goes straight to a human.
         if not classification.is_confident:
@@ -128,16 +195,18 @@ class TriageService:
 
     # -- workflow steps -------------------------------------------------------
 
-    def _classify(self, ticket: Ticket) -> Classification:
-        classification = self._classifier.classify(ticket)
+    def _classify(self, ticket: Ticket, hint: str | None = None) -> Classification:
+        classification = self._classifier.classify(ticket, hint)
         self._events.publish(
             TicketClassified(ticket=ticket, classification=classification)
         )
+        suffix = " using reviewer hint" if hint else ""
         self._log(
             "classifier",
             ticket.key,
             f"Classified as {classification.category} "
-            f"({classification.confidence:.0%} confidence) -> {classification.target_project}.",
+            f"({classification.confidence:.0%} confidence) -> "
+            f"{classification.target_project}{suffix}.",
         )
         return classification
 
@@ -198,6 +267,9 @@ class TriageService:
             reason=reason,
             category=classification.category,
             confidence=classification.confidence,
+            agent=agent,
+            rationale=classification.rationale,
+            details=tuple(validation_details),
         )
         self._inbox.add(entry)
         # Per the spec, exceptions are surfaced to the jiraya dashboard for human

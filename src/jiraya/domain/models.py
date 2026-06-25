@@ -163,6 +163,9 @@ class InboxEntry:
     reason: str
     category: TicketCategory = TicketCategory.UNKNOWN
     confidence: float = 0.0
+    agent: str | None = None
+    rationale: str = ""
+    details: tuple[str, ...] = ()
     status: InboxStatus = InboxStatus.OPEN
     created_at: datetime = field(default_factory=utcnow)
     resolved_at: datetime | None = None
@@ -175,6 +178,22 @@ class InboxEntry:
             resolution=resolution,
             resolved_at=now or utcnow(),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class InboxResponse:
+    """Result of a human responding to an inbox exception.
+
+    Captures what the "respond" action did: whether a comment was posted back
+    to Jira and/or the ticket was re-triaged with the reviewer's note as a hint.
+    """
+
+    entry: InboxEntry
+    note: str = ""
+    commented: bool = False
+    comment_id: str | None = None
+    retriaged: bool = False
+    outcome: "TriageOutcome | None" = None
 
 
 class ActivityLevel(str, Enum):

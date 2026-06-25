@@ -32,12 +32,19 @@ class TicketSource(Protocol):
     def get(self, key: str) -> Ticket | None:
         """Look up a single ticket by key."""
 
+    def add_comment(self, key: str, body: str) -> str:
+        """Post a comment to the issue; return the new comment's id."""
+
 
 @runtime_checkable
 class Classifier(Protocol):
-    """Intent classification — turns a ticket into a :class:`Classification`."""
+    """Intent classification — turns a ticket into a :class:`Classification`.
 
-    def classify(self, ticket: Ticket) -> Classification: ...
+    ``hint`` carries an optional authoritative note from a human reviewer (used
+    when re-running triage from the dashboard "respond" action).
+    """
+
+    def classify(self, ticket: Ticket, hint: str | None = None) -> Classification: ...
 
 
 @runtime_checkable
@@ -56,6 +63,8 @@ class InboxRepository(Protocol):
     """Persistence for exceptions surfaced to the dashboard for human review."""
 
     def add(self, entry: InboxEntry) -> None: ...
+
+    def get(self, entry_id: str) -> InboxEntry | None: ...
 
     def all(self) -> list[InboxEntry]: ...
 

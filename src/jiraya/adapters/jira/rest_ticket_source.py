@@ -110,6 +110,14 @@ class JiraRestTicketSource(TicketSource):
             raise KeyError(f"Ticket {key} disappeared after transition")
         return updated
 
+    def add_comment(self, key: str, body: str) -> str:
+        resp = self._client.post(
+            f"/rest/api/3/issue/{key}/comment",
+            json={"body": _text_to_adf(body)},
+        )
+        resp.raise_for_status()
+        return str(resp.json().get("id", ""))
+
     # -- helpers --------------------------------------------------------------
 
     def _find_transition_id(self, key: str, status: TicketStatus) -> str | None:
@@ -155,6 +163,17 @@ def _render_description(value: Any) -> str:
     if isinstance(value, dict):  # Atlassian Document Format
         return _adf_to_text(value).strip()
     return str(value)
+
+
+def _text_to_adf(text: str) -> dict:
+    """Wrap plain text in a minimal Atlassian Document Format paragraph."""
+    return {
+        "type": "doc",
+        "version": 1,
+        "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": text}]}
+        ],
+    }
 
 
 def _adf_to_text(node: Any) -> str:
