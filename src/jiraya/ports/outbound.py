@@ -18,6 +18,7 @@ from ..domain import (
     TicketCategory,
     TicketStatus,
     ValidationResult,
+    WorkResult,
 )
 
 
@@ -89,6 +90,23 @@ class WorkspaceProvisioner(Protocol):
     """
 
     def provision(self, repo: RepoRef, ticket_key: str) -> str: ...
+
+
+@runtime_checkable
+class WorkAgentRunner(Protocol):
+    """Engage a worker agent to actually do the work in a provisioned workspace.
+
+    Called right after provisioning: e.g. invoke the Copilot CLI in the cloned
+    repo to implement the ticket and open a pull request.
+    """
+
+    def run(
+        self,
+        ticket: Ticket,
+        classification: Classification,
+        resolution: RepoResolution | None,
+        workspace: str,
+    ) -> WorkResult: ...
 
 
 @runtime_checkable

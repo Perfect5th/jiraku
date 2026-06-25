@@ -38,6 +38,7 @@ from ..domain import (
     TicketStatus,
     TicketTransitioned,
     TicketTriaged,
+    TicketWorkStarted,
     TicketsFetched,
     TriageAction,
     TriageMetrics,
@@ -92,6 +93,12 @@ def _repo_key_from_url(url: str) -> str:
     tail = cleaned.replace(":", "/").split("/")
     parts = [p for p in tail if p][-2:]
     return "/".join(parts) if parts else cleaned
+
+
+def _pr_label(pr_url: str) -> str:
+    """Short label for a PR URL, e.g. '#42' from '.../pull/42'."""
+    tail = pr_url.rstrip("/").rsplit("/", 1)[-1]
+    return f"#{tail}" if tail.isdigit() else "↗"
 
 
 class JirayaApp(App):
@@ -258,6 +265,11 @@ class JirayaApp(App):
         elif isinstance(event, TicketTransitioned):
             self._set_status(event.ticket_key, event.to_status or TicketStatus.IN_PROGRESS)
             self._update(event.ticket_key, "outcome", Text("In Progress ✓", style=f"bold {_C_DOC}"))
+        elif isinstance(event, TicketWorkStarted):
+            r = event.result
+            if r is not None and r.opened_pr:
+                self._update(event.ticket_key, "outcome",
+                             Text(f"PR {_pr_label(r.pr_url)} ↗", style=f"bold {_C_FEATURE}"))
         elif isinstance(event, TicketEscalated):
             entry = event.entry
             if entry is not None:

@@ -150,6 +150,31 @@ class ValidationResult:
     details: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class WorkResult:
+    """Outcome of a worker agent actually starting work in a provisioned repo.
+
+    Produced by the :class:`~jiraya.ports.outbound.WorkAgentRunner` after a
+    ticket transitions: e.g. the Copilot CLI ran in the cloned workspace and
+    opened a pull request.
+    """
+
+    started: bool
+    summary: str = ""
+    branch: str = ""
+    pr_url: str = ""
+    details: tuple[str, ...] = ()
+
+    @property
+    def opened_pr(self) -> bool:
+        return bool(self.pr_url)
+
+    @classmethod
+    def skipped(cls, summary: str) -> "WorkResult":
+        return cls(started=False, summary=summary)
+
+
+
 class TriageAction(str, Enum):
     """Terminal action taken by the harness for a ticket."""
 
@@ -182,6 +207,7 @@ class TriageOutcome:
     validation: ValidationResult | None = None
     resolution: RepoResolution | None = None
     workspace: str = ""  # local clone path when a workspace was provisioned
+    work: "WorkResult | None" = None  # result of the agent starting work
     note: str = ""
     at: datetime = field(default_factory=utcnow)
 

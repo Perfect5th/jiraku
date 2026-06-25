@@ -34,6 +34,7 @@ from ..domain import (
     TicketStatus,
     TicketTransitioned,
     TicketTriaged,
+    TicketWorkStarted,
     TriageAction,
     TriageMetrics,
     TriageOutcome,
@@ -45,6 +46,7 @@ from ..ports import (
     LearnedRulesStore,
     RepoResolver,
     TicketSource,
+    WorkAgentRunner,
     WorkspaceProvisioner,
 )
 from .router import AgentRouter
@@ -77,6 +79,7 @@ class TriageService:
         events: EventPublisher | None = None,
         resolver: RepoResolver | None = None,
         provisioner: WorkspaceProvisioner | None = None,
+        work_runner: WorkAgentRunner | None = None,
         learned_store: LearnedRulesStore | None = None,
         confidence_threshold: float = 0.6,
         resolution_threshold: float = 0.6,
@@ -90,6 +93,7 @@ class TriageService:
         self._events = events or _NullPublisher()
         self._resolver = resolver or _NullResolver()
         self._provisioner = provisioner
+        self._work_runner = work_runner
         self._learned = learned_store
         self._threshold = confidence_threshold
         self._resolution_threshold = resolution_threshold
@@ -330,8 +334,9 @@ class TriageService:
             f"Validated and moved to In Progress: {result.summary}",
             level=ActivityLevel.SUCCESS,
         )
-        # The worker agent "starts" by being handed a local workspace.
+        # The worker agent "starts" by being handed a local workspace, then runs.
         workspace = self._provision(ticket, agent, resolution)
+        work = self._run_work(ticket, classification, agent, resolution, workspace)
         return TriageOutcome(
             ticket_key=ticket.key,
             action=TriageAction.TRANSITIONED,
@@ -340,8 +345,36 @@ class TriageService:
             validation=result,
             resolution=resolution,
             workspace=workspace,
+            work=work,
             note=result.summary,
         )
+
+    def _run_work(
+        self,
+        ticket: Ticket,
+        classification: Classification,
+        agent: str,
+        resolution: RepoResolution | None,
+        workspace: str,
+    ):
+        if self._work_runner is None:
+            return None
+        try:
+            result = self._work_runner.run(ticket, classification, resolution, workspace)
+        except Exception as exc:  # noqa: BLE001 - running the agent is best-effort
+            self._log(agent, ticket.key, f"Work agent error: {exc}",
+                      level=ActivityLevel.ERROR)
+            return None
+        self._events.publish(
+            TicketWorkStarted(ticket_key=ticket.key, agent=agent, result=result)
+        )
+        if result.opened_pr:
+            self._log(agent, ticket.key,
+                      f"Opened pull request: {result.pr_url}",
+                      level=ActivityLevel.SUCCESS)
+        elif result.started:
+            self._log(agent, ticket.key, result.summary, level=ActivityLevel.INFO)
+        return result
 
     def _provision(
         self, ticket: Ticket, agent: str, resolution: RepoResolution | None

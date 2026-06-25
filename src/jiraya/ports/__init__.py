@@ -13,6 +13,7 @@ from .outbound import (
     LearnedRulesStore,
     RepoResolver,
     TicketSource,
+    WorkAgentRunner,
     WorkerAgent,
     WorkspaceProvisioner,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "LearnedRulesStore",
     "RepoResolver",
     "TicketSource",
+    "WorkAgentRunner",
     "WorkerAgent",
     "WorkspaceProvisioner",
 ]

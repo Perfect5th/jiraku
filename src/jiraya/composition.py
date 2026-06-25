@@ -10,7 +10,11 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-from .adapters import ReadOnlyTicketSource
+from .adapters import (
+    CopilotWorkAgentRunner,
+    NoopWorkAgentRunner,
+    ReadOnlyTicketSource,
+)
 from .adapters.agents import default_agents
 from .adapters.classifier import CopilotCliClassifier, KeywordClassifier
 from .adapters.inmemory import (
@@ -39,6 +43,7 @@ from .ports import (
     LearnedRulesStore,
     RepoResolver,
     TicketSource,
+    WorkAgentRunner,
     WorkspaceProvisioner,
 )
 
@@ -86,6 +91,7 @@ class JirayaConfig:
     learned_rules_path: str | None = None    # where learned repo rules persist
     require_repo: bool = True                 # gate on confident repo resolution
     provision: bool = False                   # actually `git clone` workspaces
+    work: bool = False                        # run the work agent (Copilot) + open PRs
     jira: JiraConfig = field(default_factory=JiraConfig)
 
     def resolve_source(self) -> str:
@@ -108,6 +114,7 @@ class JirayaSystem:
     resolver: RepoResolver
     learned_store: LearnedRulesStore
     provisioner: WorkspaceProvisioner
+    work_runner: WorkAgentRunner
     source_mode: str = "memory"
     dry_run: bool = False
 
@@ -145,9 +152,17 @@ def build_resolver(
 
 
 def build_provisioner(config: JirayaConfig, *, dry_run: bool) -> WorkspaceProvisioner:
-    if config.provision and not dry_run:
+    # Running the work agent needs a real checkout, so --work implies cloning.
+    wants_clone = config.provision or config.work
+    if wants_clone and not dry_run:
         return GitWorkspaceProvisioner()
     return NoopWorkspaceProvisioner()
+
+
+def build_work_runner(config: JirayaConfig, *, dry_run: bool) -> WorkAgentRunner:
+    if config.work and not dry_run:
+        return CopilotWorkAgentRunner(model=config.copilot_model)
+    return NoopWorkAgentRunner()
 
 
 def build_source(config: JirayaConfig) -> TicketSource:
@@ -192,6 +207,7 @@ def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
             on_comment=_make_dry_run_logger(bus, "Would post comment"),
         )
     provisioner = build_provisioner(config, dry_run=dry_run)
+    work_runner = build_work_runner(config, dry_run=dry_run)
 
     service = TriageService(
         ticket_source=source,
@@ -201,6 +217,7 @@ def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
         events=bus,
         resolver=resolver,
         provisioner=provisioner,
+        work_runner=work_runner,
         learned_store=learned_store,
         confidence_threshold=config.confidence_threshold,
         require_repo=config.require_repo,
@@ -222,6 +239,7 @@ def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
         resolver=resolver,
         learned_store=learned_store,
         provisioner=provisioner,
+        work_runner=work_runner,
         source_mode=mode,
         dry_run=dry_run,
     )

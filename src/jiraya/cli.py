@@ -75,6 +75,7 @@ def _config_from_args(args: argparse.Namespace) -> JirayaConfig:
         learned_rules_path=args.learned_rules,
         require_repo=not args.no_require_repo,
         provision=args.provision,
+        work=args.work,
         jira=jira,
     )
 
@@ -102,6 +103,10 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--provision", action="store_true",
                         help="git clone resolved repos into local workspaces so the "
                              "worker agent can start (off by default; never in dry-run).")
+    parser.add_argument("--work", action="store_true",
+                        help="Run the work agent (Copilot CLI) in the cloned "
+                             "workspace to implement the ticket and open a PR "
+                             "(implies --provision; never in dry-run).")
     writes = parser.add_mutually_exclusive_group()
     writes.add_argument("--dry-run", action="store_true",
                         help="Read real Jira items but never write back. This is "

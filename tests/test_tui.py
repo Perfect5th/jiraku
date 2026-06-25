@@ -126,6 +126,24 @@ async def test_tickets_table_shows_resolved_repo(wait_for):
         assert "acme/proj-service" in repo_cell
 
 
+async def test_tickets_table_shows_pr_when_work_opens_one(wait_for):
+    from jiraya.domain import TicketWorkStarted, WorkResult
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        app._system.bus.publish(TicketWorkStarted(
+            ticket_key="PROJ-101", agent="bug-agent",
+            result=WorkResult(started=True, summary="opened",
+                              pr_url="https://github.com/acme/proj-service/pull/12"),
+        ))
+        tickets = app.query_one("#tickets", DataTable)
+        ok = await wait_for(
+            pilot,
+            lambda: "PR #12" in str(tickets.get_cell("PROJ-101", app._cols["outcome"])),
+        )
+        assert ok
+
+
 async def test_respond_with_repo_unblocks_repository_stage(wait_for):
     app = _make_app_with_repo_gap()
     async with app.run_test() as pilot:

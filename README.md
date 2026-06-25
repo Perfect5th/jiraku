@@ -31,21 +31,27 @@ logic is fully decoupled from Jira, the LLM, and the front-end:
    │   • Registry (YAML)           │               │   • Noop (dry-run)          │
    │   • LearnedRules · Keyword    │               │   • Git (clone)             │
    ├───────────────────────────────┤               ├─────────────────────────────┤
-   │  WorkerAgent: Bug / Feature / Documentation    │  InboxRepository · EventBus │
-   └────────────────────────────────────────────────┴─────────────────────────────┘
+   │  WorkAgentRunner              │               │  InboxRepository · EventBus │
+   │   • Noop (default)            │               │                             │
+   │   • Copilot (implement + PR)  │               │                             │
+   ├───────────────────────────────┴───────────────┴─────────────────────────────┤
+   │  WorkerAgent: Bug / Feature / Documentation                                  │
+   └──────────────────────────────────────────────────────────────────────────────┘
                               driven adapters
 ```
 
 - **`domain/`** — pure entities (`Ticket`, `Classification`, `RepoResolution`,
-  `InboxEntry`, `TriageMetrics`, …) and domain events. No external dependencies.
+  `WorkResult`, `InboxEntry`, `TriageMetrics`, …) and domain events. No external
+  dependencies.
 - **`ports/`** — inbound (`TriageService`) and outbound (`TicketSource`,
   `Classifier`, `RepoResolver`, `LearnedRulesStore`, `WorkspaceProvisioner`,
-  `WorkerAgent`, `InboxRepository`, `EventBus`) protocols.
+  `WorkAgentRunner`, `WorkerAgent`, `InboxRepository`, `EventBus`) protocols.
 - **`application/`** — the harness: `TriageService` (classify → resolve repo →
-  route → validate → transition / escalate), `AgentRouter`, `TriagePoller`.
+  route → validate → transition → provision → run work), `AgentRouter`,
+  `TriagePoller`.
 - **`adapters/`** — `inmemory` (default, offline), `jira` (real REST API),
   `classifier` (keyword + Copilot CLI), `resolver` (registry + learned + keyword),
-  `workspace` (noop + git), `agents` (worker agents).
+  `workspace` (noop + git), `work_runner` (noop + Copilot), `agents`.
 - **`tui/`** — the Textual dashboard (a driving adapter).
 - **`composition.py`** — the composition root that wires everything together.
 
@@ -61,8 +67,9 @@ logic is fully decoupled from Jira, the LLM, and the front-end:
 4. **Route & validate** — `AgentRouter` hands the ticket (and its resolved repo)
    to the matching worker agent, which performs initial validation (is the bug
    reproducible? is the feature a duplicate?).
-5. **Transition & start** — actionable tickets are moved to **In Progress** and a
-   workspace is provisioned (`git clone`) so the worker agent can start;
+5. **Transition & start work** — actionable tickets are moved to **In Progress**,
+   a workspace is provisioned (`git clone`), and a **work agent** runs in it
+   (e.g. the Copilot CLI implements the change and opens a pull request);
    low-confidence or ambiguous tickets are surfaced to the dashboard inbox.
 
 ## Repository resolution
@@ -92,6 +99,26 @@ same project resolve automatically.
 When a ticket transitions, a `WorkspaceProvisioner` hands the worker agent a
 local checkout. The default is a no-op that only reports the intended path;
 `--provision` performs a real `git clone` (never in dry-run).
+
+## Work agent (implement + open a PR)
+
+Right after provisioning, the harness calls a `WorkAgentRunner` to actually do
+the work in the cloned workspace. The `CopilotWorkAgentRunner` invokes the
+GitHub Copilot CLI in the checkout to implement the ticket, push a branch, and
+open a pull request; the resulting PR URL is recorded on the outcome and shown
+in the dashboard.
+
+```bash
+# Resolve repo, clone it, run Copilot, and open a PR (real writes — use --apply)
+uv run jiraya run --once --apply \
+  --repo-registry examples/repo_registry.yaml \
+  --work
+```
+
+`--work` implies `--provision` (the agent needs a checkout) and, like all
+writes, is **disabled in dry-run**. The default runner is a no-op, so the work
+agent never runs unless you opt in. The port is the seam for other runners
+(a different CLI agent, a queue worker, etc.).
 
 ```bash
 # Resolve against your registry, persist what you teach, and clone workspaces

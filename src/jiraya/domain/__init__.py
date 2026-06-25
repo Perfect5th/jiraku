@@ -10,6 +10,7 @@ from .events import (
     PollCycleStarted,
     TicketClassified,
     TicketRepoResolved,
+    TicketWorkStarted,
     TicketEscalated,
     TicketRouted,
     TicketTransitioned,
@@ -35,6 +36,7 @@ from .models import (
     TriageMetrics,
     TriageOutcome,
     ValidationResult,
+    WorkResult,
     utcnow,
 )
 
@@ -57,6 +59,7 @@ __all__ = [
     "TriageMetrics",
     "TriageOutcome",
     "ValidationResult",
+    "WorkResult",
     "utcnow",
     "ActivityLogged",
     "DomainEvent",
@@ -65,6 +68,7 @@ __all__ = [
     "PollCycleStarted",
     "TicketClassified",
     "TicketRepoResolved",
+    "TicketWorkStarted",
     "TicketEscalated",
     "TicketRouted",
     "TicketTransitioned",

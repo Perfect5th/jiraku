@@ -19,6 +19,7 @@ from .models import (
     TicketStatus,
     TriageMetrics,
     TriageOutcome,
+    WorkResult,
     utcnow,
 )
 
@@ -68,6 +69,13 @@ class TicketTransitioned(DomainEvent):
     from_status: TicketStatus | None = None
     to_status: TicketStatus | None = None
     agent: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class TicketWorkStarted(DomainEvent):
+    ticket_key: str = ""
+    agent: str = ""
+    result: "WorkResult | None" = None
 
 
 @dataclass(frozen=True, slots=True)
