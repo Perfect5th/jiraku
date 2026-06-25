@@ -191,6 +191,7 @@ class EscalationStage(str, Enum):
     CLASSIFICATION = "classification"
     REPOSITORY = "repository"
     VALIDATION = "validation"
+    PROVISIONING = "provisioning"
 
     def __str__(self) -> str:
         return self.value
@@ -250,7 +251,7 @@ class InboxEntry:
 
     @property
     def needs_repo(self) -> bool:
-        return self.stage is EscalationStage.REPOSITORY
+        return self.stage in (EscalationStage.REPOSITORY, EscalationStage.PROVISIONING)
 
     def resolved(self, resolution: str, *, now: datetime | None = None) -> "InboxEntry":
         return replace(
