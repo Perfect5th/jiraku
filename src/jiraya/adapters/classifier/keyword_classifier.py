@@ -36,9 +36,31 @@ _LABEL_CATEGORY: dict[str, TicketCategory] = {
     "docs": TicketCategory.DOCUMENTATION,
 }
 
+# The native Jira issue type is the most authoritative signal Jira gives us, so
+# it carries the most weight in scoring.
+_TYPE_CATEGORY: dict[str, TicketCategory] = {
+    "bug": TicketCategory.BUG,
+    "defect": TicketCategory.BUG,
+    "incident": TicketCategory.BUG,
+    "fault": TicketCategory.BUG,
+    "story": TicketCategory.FEATURE_REQUEST,
+    "epic": TicketCategory.FEATURE_REQUEST,
+    "objective": TicketCategory.FEATURE_REQUEST,
+    "initiative": TicketCategory.FEATURE_REQUEST,
+    "task": TicketCategory.FEATURE_REQUEST,
+    "improvement": TicketCategory.FEATURE_REQUEST,
+    "new feature": TicketCategory.FEATURE_REQUEST,
+    "feature": TicketCategory.FEATURE_REQUEST,
+    "suggestion": TicketCategory.FEATURE_REQUEST,
+    "documentation": TicketCategory.DOCUMENTATION,
+    "docs": TicketCategory.DOCUMENTATION,
+}
+
+_TYPE_WEIGHT = 3  # an explicit issue type outweighs prose and labels
+
 
 class KeywordClassifier(Classifier):
-    """Scores tickets against per-category keyword and label signals."""
+    """Scores tickets against per-category keyword, label and issue-type signals."""
 
     source_name = "keyword"
 
@@ -54,6 +76,10 @@ class KeywordClassifier(Classifier):
             if mapped is not None:
                 scores[mapped] += 2  # explicit labels weigh more than prose
 
+        type_category = _TYPE_CATEGORY.get(ticket.issue_type.strip().lower())
+        if type_category is not None:
+            scores[type_category] += _TYPE_WEIGHT
+
         best = max(scores, key=lambda c: scores[c])
         best_score = scores[best]
         if best_score == 0:
@@ -61,7 +87,7 @@ class KeywordClassifier(Classifier):
                 category=TicketCategory.UNKNOWN,
                 target_project=ticket.project,
                 confidence=0.2,
-                rationale="No category signals found in summary or description.",
+                rationale="No category signals found in issue type, labels or text.",
                 source=self.source_name,
             )
 
@@ -70,10 +96,13 @@ class KeywordClassifier(Classifier):
         if best_score - runner_up <= 0:  # ambiguous tie between categories
             confidence *= 0.7
 
+        rationale = f"Matched {best_score} '{best}' signal(s)"
+        if type_category is best:
+            rationale += f" (Jira issue type '{ticket.issue_type}')"
         return Classification(
             category=best,
             target_project=ticket.project,
             confidence=round(confidence, 2),
-            rationale=f"Matched {best_score} '{best}' signal(s) in the ticket text.",
+            rationale=rationale + ".",
             source=self.source_name,
         )

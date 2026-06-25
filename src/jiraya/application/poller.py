@@ -17,7 +17,7 @@ from ..domain import (
     TicketsFetched,
     TriageOutcome,
 )
-from ..ports import EventPublisher, TicketSource
+from ..ports import EventPublisher, InboxRepository, TicketSource
 from .triage_service import TriageService, _NullPublisher
 
 
@@ -31,11 +31,13 @@ class TriagePoller:
         service: TriageService,
         events: EventPublisher | None = None,
         interval_seconds: float = 1800.0,
+        inbox: InboxRepository | None = None,
     ) -> None:
         self._source = ticket_source
         self._service = service
         self._events = events or _NullPublisher()
         self.interval_seconds = interval_seconds
+        self._inbox = inbox
         self._stop = asyncio.Event()
 
     async def run_once(self) -> list[TriageOutcome]:
@@ -46,8 +48,14 @@ class TriagePoller:
         tickets = await asyncio.to_thread(self._source.fetch_untriaged)
         self._events.publish(TicketsFetched(tickets=tuple(tickets)))
 
+        # Skip tickets already awaiting human review so repeated polls don't
+        # create duplicate inbox entries (important once escalation no longer
+        # changes the ticket's Jira status).
+        pending = self._open_inbox_keys()
         outcomes: list[TriageOutcome] = []
         for ticket in tickets:
+            if ticket.key in pending:
+                continue
             outcome = await asyncio.to_thread(self._service.triage_ticket, ticket)
             outcomes.append(outcome)
 
@@ -56,6 +64,11 @@ class TriagePoller:
             PollCycleCompleted(cycle=cycle, processed=len(outcomes))
         )
         return outcomes
+
+    def _open_inbox_keys(self) -> set[str]:
+        if self._inbox is None:
+            return set()
+        return {entry.ticket_key for entry in self._inbox.open_entries()}
 
     async def run_forever(self, *, max_cycles: int | None = None) -> None:
         """Poll until :meth:`stop` is called (or ``max_cycles`` is reached)."""

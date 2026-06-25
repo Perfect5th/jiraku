@@ -84,7 +84,7 @@ uv run jiraya run --cycles 3      # three cycles then exit
 uv run jiraya run                 # poll forever (Ctrl-C to stop)
 ```
 
-### Classifier and source selection
+### Classifier selection
 
 ```bash
 # Use the GitHub Copilot CLI as the classification agent
@@ -92,16 +92,55 @@ uv run jiraya run --once --classifier copilot
 
 # Fall back to the deterministic keyword classifier if Copilot is unavailable
 uv run jiraya run --once --classifier copilot --copilot-fallback
-
-# Point at a real Jira instance
-export JIRA_BASE_URL="https://your-org.atlassian.net"
-export JIRA_EMAIL="you@example.com"
-export JIRA_API_TOKEN="…"
-uv run jiraya tui --source jira --classifier copilot
 ```
 
 By default jiraya runs fully offline against an in-memory Jira seeded with a
 representative batch of tickets, so it is runnable with zero configuration.
+
+## Connecting to real Jira
+
+jiraya authenticates to **Jira Cloud** with your email + an API token
+([create one here](https://id.atlassian.com/manage-profile/security/api-tokens))
+using HTTP Basic auth, and reads issues with the current
+`/rest/api/3/search/jql` endpoint (token pagination).
+
+Provide credentials via environment variables or a `.jira.env` file in the
+working directory (auto-loaded; **git-ignored** — never commit it):
+
+```bash
+# .jira.env
+JIRA_BASE=https://your-org.atlassian.net   # JIRA_BASE_URL also accepted
+JIRA_EMAIL=you@example.com
+JIRA_API_TOKEN=your-api-token
+JIRA_JQL=assignee = currentUser() AND status in ("To Do", "Untriaged") ORDER BY created ASC
+```
+
+When credentials are present, `--source auto` (the default) selects real Jira;
+otherwise it falls back to the in-memory demo. The chosen mode is always printed
+at startup — jiraya never silently degrades.
+
+### Dry-run vs. apply (write safety)
+
+Triage **mutates the board** (it transitions actionable tickets to *In
+Progress*). To avoid surprises, a real Jira source is **read-only by default**:
+every intended transition is logged but not written. Pass `--apply` to actually
+perform transitions.
+
+```bash
+# Preview triage of your real tickets — no writes (default for real Jira)
+uv run jiraya run --once
+
+# Actually transition actionable tickets to In Progress
+uv run jiraya run --once --apply
+
+# Live dashboard over real Jira, read-only
+uv run jiraya tui --classifier copilot
+```
+
+Escalations are surfaced to the dashboard inbox **without** changing the
+ticket's Jira status (the harness only ever writes the *In Progress*
+transition, and only with `--apply`). The native Jira **issue type** (Bug,
+Story, Epic, …) is used as a strong classification signal.
 
 ## Test
 
@@ -110,5 +149,6 @@ uv run pytest
 ```
 
 The suite covers the domain, the harness, every adapter (including the Jira
-REST adapter via `httpx.MockTransport` and the Copilot classifier via an
-injected runner), and the TUI via Textual's headless pilot.
+REST adapter via `httpx.MockTransport`, token pagination, the read-only
+dry-run wrapper, and the Copilot classifier via an injected runner), and the
+TUI via Textual's headless pilot.

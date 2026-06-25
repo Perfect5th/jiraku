@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from .adapters import ReadOnlyTicketSource
 from .adapters.agents import default_agents
 from .adapters.classifier import CopilotCliClassifier, KeywordClassifier
 from .adapters.inmemory import (
@@ -19,20 +20,10 @@ from .adapters.inmemory import (
 )
 from .adapters.jira import JiraRestTicketSource
 from .application import AgentRouter, TriagePoller, TriageService
+from .domain import ActivityLevel, ActivityLogged, AgentActivity, TicketStatus
 from .ports import Classifier, EventBus, InboxRepository, TicketSource
 
-
-@dataclass(slots=True)
-class JirayaConfig:
-    """User-facing configuration for assembling the system."""
-
-    classifier: str = "keyword"      # "keyword" | "copilot"
-    source: str = "memory"           # "memory" | "jira"
-    interval_seconds: float = 1800.0
-    confidence_threshold: float = 0.6
-    copilot_model: str | None = None
-    copilot_fallback_to_keyword: bool = False
-    jira: "JiraConfig" = field(default_factory=lambda: JiraConfig())
+_DEFAULT_JQL = 'status in ("To Do", "Untriaged") ORDER BY created ASC'
 
 
 @dataclass(slots=True)
@@ -42,18 +33,43 @@ class JiraConfig:
     base_url: str = ""
     email: str = ""
     api_token: str = ""
-    jql: str = 'status in ("To Do", "Untriaged") ORDER BY created ASC'
+    jql: str = _DEFAULT_JQL
 
     @classmethod
-    def from_env(cls) -> "JiraConfig":
+    def from_env(cls, env: dict[str, str] | None = None) -> "JiraConfig":
+        env = env if env is not None else os.environ
+        # Accept both JIRA_BASE_URL and the shorter JIRA_BASE.
+        base = env.get("JIRA_BASE_URL") or env.get("JIRA_BASE") or ""
         return cls(
-            base_url=os.environ.get("JIRA_BASE_URL", ""),
-            email=os.environ.get("JIRA_EMAIL", ""),
-            api_token=os.environ.get("JIRA_API_TOKEN", ""),
-            jql=os.environ.get(
-                "JIRA_JQL", 'status in ("To Do", "Untriaged") ORDER BY created ASC'
-            ),
+            base_url=base,
+            email=env.get("JIRA_EMAIL", ""),
+            api_token=env.get("JIRA_API_TOKEN", ""),
+            jql=env.get("JIRA_JQL") or _DEFAULT_JQL,
         )
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.base_url and self.email and self.api_token)
+
+
+@dataclass(slots=True)
+class JirayaConfig:
+    """User-facing configuration for assembling the system."""
+
+    classifier: str = "keyword"      # "keyword" | "copilot"
+    source: str = "auto"             # "auto" | "memory" | "jira"
+    interval_seconds: float = 1800.0
+    confidence_threshold: float = 0.6
+    copilot_model: str | None = None
+    copilot_fallback_to_keyword: bool = False
+    dry_run: bool = False
+    jira: JiraConfig = field(default_factory=JiraConfig)
+
+    def resolve_source(self) -> str:
+        """Resolve the effective source, honouring ``auto`` detection."""
+        if self.source == "auto":
+            return "jira" if self.jira.is_configured else "memory"
+        return self.source
 
 
 @dataclass(slots=True)
@@ -66,6 +82,8 @@ class JirayaSystem:
     router: AgentRouter
     service: TriageService
     poller: TriagePoller
+    source_mode: str = "memory"
+    dry_run: bool = False
 
 
 def build_classifier(config: JirayaConfig) -> Classifier:
@@ -78,13 +96,15 @@ def build_classifier(config: JirayaConfig) -> Classifier:
 
 
 def build_source(config: JirayaConfig) -> TicketSource:
-    if config.source == "memory":
+    mode = config.resolve_source()
+    if mode == "memory":
         return InMemoryTicketSource()
-    if config.source == "jira":
+    if mode == "jira":
         jira = config.jira
         if not jira.base_url:
             raise ValueError(
-                "Jira source selected but JIRA_BASE_URL is not configured."
+                "Jira source selected but no base URL is configured "
+                "(set JIRA_BASE_URL/JIRA_BASE, JIRA_EMAIL and JIRA_API_TOKEN)."
             )
         return JiraRestTicketSource(
             base_url=jira.base_url,
@@ -98,12 +118,20 @@ def build_source(config: JirayaConfig) -> TicketSource:
 def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
     """Assemble every component for the given configuration."""
     config = config or JirayaConfig()
+    mode = config.resolve_source()
 
     bus = InMemoryEventBus()
-    source = build_source(config)
     inbox = InMemoryInboxRepository()
     classifier = build_classifier(config)
     router = AgentRouter(default_agents())
+
+    source: TicketSource = build_source(config)
+    # Dry-run only makes sense against a real, mutating backend.
+    dry_run = config.dry_run and mode == "jira"
+    if dry_run:
+        source = ReadOnlyTicketSource(
+            source, on_transition=_make_dry_run_observer(bus)
+        )
 
     service = TriageService(
         ticket_source=source,
@@ -118,6 +146,7 @@ def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
         service=service,
         events=bus,
         interval_seconds=config.interval_seconds,
+        inbox=inbox,
     )
     return JirayaSystem(
         bus=bus,
@@ -126,4 +155,22 @@ def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
         router=router,
         service=service,
         poller=poller,
+        source_mode=mode,
+        dry_run=dry_run,
     )
+
+
+def _make_dry_run_observer(bus: EventBus):
+    def observer(key: str, status: TicketStatus) -> None:
+        bus.publish(
+            ActivityLogged(
+                activity=AgentActivity(
+                    agent="dry-run",
+                    ticket_key=key,
+                    message=f"Would transition to {status} (dry-run; Jira not modified).",
+                    level=ActivityLevel.INFO,
+                )
+            )
+        )
+
+    return observer

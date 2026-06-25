@@ -78,6 +78,7 @@ class Ticket:
     priority: Priority = Priority.MEDIUM
     status: TicketStatus = TicketStatus.UNTRIAGED
     labels: tuple[str, ...] = ()
+    issue_type: str = ""  # the native Jira issue type (Bug, Story, Epic, …)
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
 

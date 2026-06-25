@@ -141,8 +141,8 @@ class JirayaApp(App):
         self._loop = asyncio.get_running_loop()
 
         tickets = self.query_one("#tickets", DataTable)
-        cols = tickets.add_columns("Key", "Project", "Category", "Status", "Agent", "Outcome")
-        self._cols = dict(zip(["key", "project", "category", "status", "agent", "outcome"], cols))
+        cols = tickets.add_columns("Key", "Project", "Type", "Category", "Status", "Agent", "Outcome")
+        self._cols = dict(zip(["key", "project", "type", "category", "status", "agent", "outcome"], cols))
 
         inbox = self.query_one("#inbox", DataTable)
         icols = inbox.add_columns("Ticket", "Category", "Reason")
@@ -153,8 +153,11 @@ class JirayaApp(App):
         tickets.border_title = "Tickets"
 
         self._render_metrics(self._system.service.metrics.snapshot())
-        self._log_line("jiraya dashboard started — polling for untriaged tickets…",
-                       ActivityLevel.INFO)
+        mode = "real Jira" if self._system.source_mode == "jira" else "in-memory demo"
+        if self._system.dry_run:
+            mode += " (dry-run: no writes)"
+        self.sub_title = f"triage · {mode}"
+        self._log_line(f"jiraya dashboard started — source: {mode}.", ActivityLevel.INFO)
 
         self._unsubscribe = self._system.bus.subscribe(self._on_event)
         self.run_worker(self._poll_loop(), name="poller", exclusive=False)
@@ -189,14 +192,15 @@ class JirayaApp(App):
     def _apply_event(self, event: DomainEvent) -> None:
         if isinstance(event, TicketsFetched):
             for ticket in event.tickets:
-                self._ensure_row(ticket.key, ticket.project, ticket.status)
+                self._ensure_row(ticket.key, ticket.project, ticket.status,
+                                 ticket.issue_type)
             if event.count:
                 self._log_line(f"Fetched {event.count} untriaged ticket(s).",
                                ActivityLevel.INFO)
         elif isinstance(event, TicketClassified):
             t, c = event.ticket, event.classification
             if t is not None and c is not None:
-                self._ensure_row(t.key, t.project, t.status)
+                self._ensure_row(t.key, t.project, t.status, t.issue_type)
                 self._update(t.key, "category",
                              Text(str(c.category), style=_CATEGORY_STYLE[c.category]))
         elif isinstance(event, TicketRouted):
@@ -207,7 +211,7 @@ class JirayaApp(App):
         elif isinstance(event, TicketEscalated):
             entry = event.entry
             if entry is not None:
-                self._set_status(entry.ticket_key, TicketStatus.NEEDS_REVIEW)
+                # Escalation surfaces to the inbox without changing Jira status.
                 self._update(entry.ticket_key, "outcome", Text("Review ⚠", style="yellow"))
                 self._add_inbox_row(entry)
         elif isinstance(event, ActivityLogged) and event.activity is not None:
@@ -224,13 +228,16 @@ class JirayaApp(App):
 
     # -- widget helpers -------------------------------------------------------
 
-    def _ensure_row(self, key: str, project: str, status: TicketStatus) -> None:
+    def _ensure_row(
+        self, key: str, project: str, status: TicketStatus, issue_type: str = ""
+    ) -> None:
         if key in self._ticket_rows:
             return
         table = self.query_one("#tickets", DataTable)
         table.add_row(
             Text(key, style="bold"),
             project,
+            issue_type or "—",
             Text("…", style="grey50"),
             Text(str(status), style=_STATUS_STYLE.get(status, "white")),
             "—",

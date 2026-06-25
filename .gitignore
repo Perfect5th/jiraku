@@ -1,1 +1,4 @@
 .workshop.lock
+.jira.env
+__pycache__/
+*.py[codz]

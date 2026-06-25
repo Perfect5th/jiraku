@@ -34,6 +34,19 @@ def test_second_poll_is_idempotent():
     assert system.service.metrics.poll_cycles == 2
 
 
+def test_escalated_tickets_are_not_reprocessed():
+    # Escalation no longer changes Jira status, so dedupe must come from the
+    # poller skipping tickets that already have an open inbox entry.
+    system = build_system(JirayaConfig())
+    asyncio.run(system.poller.run_once())
+    open_before = len(system.inbox.open_entries())
+    assert open_before == 4
+
+    asyncio.run(system.poller.run_once())
+    # No duplicate inbox entries created for the already-surfaced tickets.
+    assert len(system.inbox.open_entries()) == open_before
+
+
 def test_run_forever_respects_max_cycles():
     system = build_system(JirayaConfig(interval_seconds=0.0))
     asyncio.run(system.poller.run_forever(max_cycles=3))

@@ -31,6 +31,7 @@ Respond with ONLY a single JSON object, no prose, in this exact shape:
 
 Ticket key: {key}
 Project: {project}
+Issue type: {issue_type}
 Reporter: {reporter}
 Priority: {priority}
 Labels: {labels}
@@ -91,6 +92,7 @@ class CopilotCliClassifier(Classifier):
         prompt = _PROMPT_TEMPLATE.format(
             key=ticket.key,
             project=ticket.project,
+            issue_type=ticket.issue_type or "unspecified",
             reporter=ticket.reporter,
             priority=ticket.priority,
             labels=", ".join(ticket.labels) or "none",

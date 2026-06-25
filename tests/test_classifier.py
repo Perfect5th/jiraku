@@ -44,6 +44,23 @@ def test_keyword_classifier_unknown_when_no_signal():
     assert not c.is_confident
 
 
+def test_keyword_classifier_uses_jira_issue_type():
+    # No keyword/label signals at all — only the native Jira issue type.
+    ticket = Ticket(key="X-1", project="X", summary="Quarterly objective",
+                    description="Deliver the thing.", reporter="r",
+                    issue_type="Bug")
+    c = KeywordClassifier().classify(ticket)
+    assert c.category is TicketCategory.BUG
+    assert c.is_confident
+    assert "issue type" in c.rationale.lower()
+
+
+def test_keyword_classifier_issue_type_story_is_feature():
+    ticket = Ticket(key="X-2", project="X", summary="Do work",
+                    description="Some work item.", reporter="r", issue_type="Story")
+    assert KeywordClassifier().classify(ticket).category is TicketCategory.FEATURE_REQUEST
+
+
 def test_extract_json_from_noisy_output():
     raw = "thinking...\nHere is the result:\n{\"category\": \"Bug\", \"confidence\": 0.8}\nbye"
     assert _extract_json(raw) == {"category": "Bug", "confidence": 0.8}

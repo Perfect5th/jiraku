@@ -3,6 +3,9 @@
 Implements the same port as the in-memory fake. The ``httpx.Client`` is
 injectable so the adapter can be exercised with ``httpx.MockTransport`` without
 a live Jira instance.
+
+Uses the current ``/rest/api/3/search/jql`` endpoint (token pagination). The
+legacy ``/rest/api/3/search`` endpoint was removed from Jira Cloud in 2025.
 """
 
 from __future__ import annotations
@@ -15,14 +18,25 @@ from ...domain import Priority, Ticket, TicketStatus
 from ...ports import TicketSource
 
 _DEFAULT_JQL = 'status in ("To Do", "Untriaged") ORDER BY created ASC'
-_FIELDS = "summary,description,reporter,priority,status,labels,created,updated"
+_FIELDS = "summary,description,reporter,priority,status,labels,issuetype,created,updated"
 
 _PRIORITY_BY_NAME = {p.value.lower(): p for p in Priority}
 _STATUS_BY_NAME = {s.value.lower(): s for s in TicketStatus}
 
+# Real Jira workflows name their states differently from our canonical domain
+# statuses. These aliases let a transition request resolve against whatever the
+# target workflow actually calls each state.
+_STATUS_ALIASES: dict[TicketStatus, tuple[str, ...]] = {
+    TicketStatus.IN_PROGRESS: ("in progress", "start progress", "in development"),
+    TicketStatus.NEEDS_REVIEW: ("needs review", "in review", "review", "code review"),
+    TicketStatus.TODO: ("to do", "todo", "open", "backlog"),
+    TicketStatus.DONE: ("done", "closed", "resolved", "to be deployed"),
+    TicketStatus.UNTRIAGED: ("untriaged",),
+}
+
 
 class JiraRestTicketSource(TicketSource):
-    """Reads and transitions issues via Jira's REST API (v3)."""
+    """Reads and transitions issues via Jira Cloud's REST API (v3)."""
 
     def __init__(
         self,
@@ -32,10 +46,14 @@ class JiraRestTicketSource(TicketSource):
         api_token: str | None = None,
         jql: str = _DEFAULT_JQL,
         max_results: int = 50,
+        page_limit: int = 20,
         client: httpx.Client | None = None,
     ) -> None:
+        if not base_url and client is None:
+            raise ValueError("Jira base_url is required")
         self._jql = jql
         self._max_results = max_results
+        self._page_limit = page_limit
         auth = httpx.BasicAuth(email, api_token) if email and api_token else None
         self._client = client or httpx.Client(
             base_url=base_url.rstrip("/"),
@@ -45,17 +63,27 @@ class JiraRestTicketSource(TicketSource):
         )
 
     def fetch_untriaged(self) -> list[Ticket]:
-        resp = self._client.get(
-            "/rest/api/3/search",
-            params={
+        """Page through ``/search/jql`` until the result set is exhausted."""
+        tickets: list[Ticket] = []
+        next_token: str | None = None
+        for _ in range(self._page_limit):
+            params: dict[str, Any] = {
                 "jql": self._jql,
                 "fields": _FIELDS,
                 "maxResults": self._max_results,
-            },
-        )
-        resp.raise_for_status()
-        issues = resp.json().get("issues", [])
-        return [self._issue_to_ticket(issue) for issue in issues]
+            }
+            if next_token:
+                params["nextPageToken"] = next_token
+            resp = self._client.get("/rest/api/3/search/jql", params=params)
+            resp.raise_for_status()
+            payload = resp.json()
+            tickets.extend(
+                self._issue_to_ticket(issue) for issue in payload.get("issues", [])
+            )
+            next_token = payload.get("nextPageToken")
+            if payload.get("isLast", True) or not next_token:
+                break
+        return tickets
 
     def get(self, key: str) -> Ticket | None:
         resp = self._client.get(
@@ -87,10 +115,11 @@ class JiraRestTicketSource(TicketSource):
     def _find_transition_id(self, key: str, status: TicketStatus) -> str | None:
         resp = self._client.get(f"/rest/api/3/issue/{key}/transitions")
         resp.raise_for_status()
-        target = status.value.lower()
+        candidates = {status.value.lower(), *_STATUS_ALIASES.get(status, ())}
         for transition in resp.json().get("transitions", []):
-            to_name = transition.get("to", {}).get("name", "").lower()
-            if to_name == target or transition.get("name", "").lower() == target:
+            to_name = (transition.get("to") or {}).get("name", "").lower()
+            name = transition.get("name", "").lower()
+            if to_name in candidates or name in candidates:
                 return str(transition.get("id"))
         return None
 
@@ -98,16 +127,19 @@ class JiraRestTicketSource(TicketSource):
         fields = issue.get("fields", {})
         priority_name = (fields.get("priority") or {}).get("name", "")
         status_name = (fields.get("status") or {}).get("name", "")
-        reporter = (fields.get("reporter") or {}).get("displayName", "unknown")
+        reporter = (fields.get("reporter") or {}).get("displayName") or "unknown"
+        issue_type = (fields.get("issuetype") or {}).get("name", "")
+        key = issue.get("key", "UNKNOWN-0")
         return Ticket(
-            key=issue.get("key", "UNKNOWN"),
-            project=str(issue.get("key", "UNKNOWN-0")).split("-", 1)[0],
-            summary=fields.get("summary", ""),
+            key=key,
+            project=str(key).split("-", 1)[0],
+            summary=fields.get("summary") or "",
             description=_render_description(fields.get("description")),
             reporter=reporter,
             priority=_PRIORITY_BY_NAME.get(priority_name.lower(), Priority.MEDIUM),
             status=_STATUS_BY_NAME.get(status_name.lower(), TicketStatus.TODO),
-            labels=tuple(fields.get("labels", []) or ()),
+            labels=tuple(fields.get("labels") or ()),
+            issue_type=issue_type,
         )
 
     def close(self) -> None:

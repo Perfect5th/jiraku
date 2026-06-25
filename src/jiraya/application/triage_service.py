@@ -148,7 +148,18 @@ class TriageService:
         agent: str,
         result,
     ) -> TriageOutcome:
-        updated = self._source.transition(ticket.key, TicketStatus.IN_PROGRESS)
+        try:
+            updated = self._source.transition(ticket.key, TicketStatus.IN_PROGRESS)
+        except Exception as exc:  # noqa: BLE001 - real workflows vary; degrade safely
+            # The ticket is actionable but we could not move it (e.g. the
+            # workflow has no "In Progress" transition). Surface it instead of
+            # losing the result.
+            return self._escalate(
+                ticket,
+                classification,
+                reason=f"Validated but could not transition to In Progress: {exc}",
+                agent=agent,
+            )
         self._events.publish(
             TicketTransitioned(
                 ticket_key=ticket.key,
@@ -189,9 +200,8 @@ class TriageService:
             confidence=classification.confidence,
         )
         self._inbox.add(entry)
-        # Flag the ticket itself so it is visibly awaiting review.
-        if ticket.status is not TicketStatus.NEEDS_REVIEW:
-            self._source.transition(ticket.key, TicketStatus.NEEDS_REVIEW)
+        # Per the spec, exceptions are surfaced to the jiraya dashboard for human
+        # review; the ticket's Jira status is deliberately left untouched.
         self._events.publish(TicketEscalated(entry=entry))
         self._log(
             agent or "triage",

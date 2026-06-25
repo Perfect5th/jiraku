@@ -8,18 +8,18 @@ import random
 from ...domain import Priority, Ticket, TicketStatus
 
 _DEMO_SPECS = [
-    ("PROJ", "Crash when saving profile", "bug",
+    ("PROJ", "Crash when saving profile", "bug", "Bug",
      "Steps to reproduce:\n1. Open profile\n2. Click save\nExpected: saved. "
      "Actual: the app throws an exception and the page reloads."),
-    ("WEB", "Add keyboard shortcuts", "enhancement",
+    ("WEB", "Add keyboard shortcuts", "enhancement", "Story",
      "Please add the ability to navigate the report grid with arrow keys. "
      "Would be nice for power users."),
-    ("DOC", "Clarify the authentication guide", "documentation",
+    ("DOC", "Clarify the authentication guide", "documentation", "Documentation",
      "The authentication guide section on token refresh is confusing. "
      "Please add an example to the docs page."),
-    ("SUP", "Need assistance", "",
+    ("SUP", "Need assistance", "", "Task",
      "Something seems off, not sure what. Can someone take a look?"),
-    ("WEB", "Export breaks for large reports", "bug",
+    ("WEB", "Export breaks for large reports", "bug", "Bug",
      "The CSV export fails with a 500 error for reports over 10k rows. "
      "Stack trace attached. Steps: open a large report, click export."),
 ]
@@ -29,7 +29,7 @@ _counter = itertools.count(500)
 
 def random_ticket() -> Ticket:
     """Synthesize a fresh untriaged ticket for live-dashboard demos."""
-    project, summary, label, description = random.choice(_DEMO_SPECS)
+    project, summary, label, issue_type, description = random.choice(_DEMO_SPECS)
     number = next(_counter)
     return Ticket(
         key=f"{project}-{number}",
@@ -39,6 +39,7 @@ def random_ticket() -> Ticket:
         reporter=random.choice(("alice", "bob", "carol", "dave", "erin")),
         priority=random.choice(list(Priority)),
         labels=(label,) if label else (),
+        issue_type=issue_type,
     )
 
 

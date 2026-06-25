@@ -99,9 +99,26 @@ def test_low_confidence_is_escalated():
 
     assert outcome.action is TriageAction.ESCALATED
     assert len(inbox.open_entries()) == 1
-    assert (ticket.key, TicketStatus.NEEDS_REVIEW) in source.transitions
+    # Escalation surfaces to the inbox WITHOUT mutating the ticket's Jira status.
+    assert source.transitions == []
     assert any(isinstance(e, TicketEscalated) for e in events)
     assert service.metrics.escalated == 1
+
+
+def test_actionable_but_failed_transition_is_escalated():
+    cls = Classification(TicketCategory.BUG, "A", 0.9)
+    agent = StubAgent(TicketCategory.BUG, ValidationResult(actionable=True, summary="ok"))
+    service, source, inbox, events, ticket = _build(cls, [agent])
+
+    def boom(key, status):
+        raise ValueError("no In Progress transition in this workflow")
+
+    source.transition = boom  # simulate a workflow without the transition
+
+    outcome = service.triage_ticket(ticket)
+    assert outcome.action is TriageAction.ESCALATED
+    assert "could not transition" in outcome.note
+    assert len(inbox.open_entries()) == 1
 
 
 def test_unknown_category_is_escalated():
