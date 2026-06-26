@@ -103,6 +103,17 @@ def _pr_label(pr_url: str) -> str:
     return f"#{tail}" if tail.isdigit() else "↗"
 
 
+def _record_outcome_cell(r) -> Text:
+    """Outcome-column text for a restored ledger record."""
+    if r.action is TriageAction.TRANSITIONED:
+        if r.pr_url:
+            return Text(f"PR {_pr_label(r.pr_url)} ↗", style=f"bold {_C_FEATURE}")
+        return Text("In Progress ✓", style=f"bold {_C_DOC}")
+    if r.stage is EscalationStage.WORK or r.question:
+        return Text("Needs input ⌨", style=f"bold {_C_UNKNOWN}")
+    return Text("Review ⚠", style=f"bold {_C_UNKNOWN}")
+
+
 class JirayaApp(App):
     """Real-time triage dashboard."""
 
@@ -217,8 +228,36 @@ class JirayaApp(App):
         self.sub_title = f"triage · {mode}"
         self._log_line(f"jiraya dashboard started — source: {mode}.", ActivityLevel.INFO)
 
+        self._rehydrate()
         self._unsubscribe = self._system.bus.subscribe(self._on_event)
         self.run_worker(self._poll_loop(), name="poller", exclusive=False)
+
+    def _rehydrate(self) -> None:
+        """Restore previously-actioned tickets + open inbox items from the store."""
+        records = self._system.ledger.records()
+        for r in records:
+            project = r.ticket_key.split("-", 1)[0]
+            status = (TicketStatus.IN_PROGRESS
+                      if r.action is TriageAction.TRANSITIONED
+                      else TicketStatus.UNTRIAGED)
+            self._ensure_row(r.ticket_key, project, status, "")
+            self._update(r.ticket_key, "category",
+                         Text(str(r.category), style=_CATEGORY_STYLE[r.category]))
+            if r.agent:
+                self._update(r.ticket_key, "agent", r.agent)
+            if r.repo:
+                self._update(r.ticket_key, "repo", Text(r.repo, style=_C_FEATURE))
+            if r.workspace:
+                self._workspaces[r.ticket_key] = r.workspace
+            self._update(r.ticket_key, "outcome", _record_outcome_cell(r))
+        for entry in self._system.inbox.open_entries():
+            self._add_inbox_row(entry)
+        if records:
+            self._log_line(
+                f"Restored {len(records)} actioned ticket(s) and "
+                f"{len(self._inbox_entries)} open inbox item(s) from state.",
+                ActivityLevel.INFO)
+        self._update_activity_header()
 
     def on_unmount(self) -> None:
         if self._unsubscribe is not None:

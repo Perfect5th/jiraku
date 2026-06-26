@@ -46,6 +46,7 @@ from ..ports import (
     LearnedRulesStore,
     RepoResolver,
     TicketSource,
+    TriageLedger,
     WorkAgentRunner,
     WorkspaceProvisioner,
     WorkspaceProvisionError,
@@ -67,6 +68,19 @@ class _NullPublisher:
         return None
 
 
+class _NullLedger:
+    """Ledger used when no persistence is configured: records nothing."""
+
+    def record(self, outcome) -> None:  # noqa: ANN001
+        return None
+
+    def actioned_keys(self) -> set[str]:
+        return set()
+
+    def records(self) -> list:
+        return []
+
+
 class TriageService:
     """Implements the inbound :class:`~jiraya.ports.inbound.TriageService` port."""
 
@@ -82,6 +96,7 @@ class TriageService:
         provisioner: WorkspaceProvisioner | None = None,
         work_runner: WorkAgentRunner | None = None,
         learned_store: LearnedRulesStore | None = None,
+        ledger: TriageLedger | None = None,
         confidence_threshold: float = 0.6,
         resolution_threshold: float = 0.6,
         require_repo: bool = True,
@@ -96,6 +111,7 @@ class TriageService:
         self._provisioner = provisioner
         self._work_runner = work_runner
         self._learned = learned_store
+        self._ledger = ledger or _NullLedger()
         self._threshold = confidence_threshold
         self._resolution_threshold = resolution_threshold
         # When no real resolver is configured, don't block tickets on repo
@@ -103,7 +119,7 @@ class TriageService:
         self._require_repo = require_repo and not isinstance(self._resolver, _NullResolver)
         self._id_factory = id_factory or (lambda: uuid.uuid4().hex[:8])
         self._metrics = TriageMetrics()
-
+        self._restore_metrics()
 
     # -- public API -----------------------------------------------------------
 
@@ -606,15 +622,37 @@ class TriageService:
             resolution=resolution,
             workspace=workspace,
             work=work,
+            stage=stage,
             note=reason,
         )
 
 
     def _finish(self, outcome: TriageOutcome) -> TriageOutcome:
         self._metrics.record(outcome)
+        self._ledger.record(outcome)  # durable actioned-ticket ledger
         self._events.publish(TicketTriaged(outcome=outcome))
         self._events.publish(MetricsUpdated(metrics=self._metrics.snapshot()))
         return outcome
+
+    def actioned_keys(self) -> set[str]:
+        """Ticket keys the harness has already actioned (across restarts)."""
+        return self._ledger.actioned_keys()
+
+    def _restore_metrics(self) -> None:
+        """Seed metrics from the persisted ledger so counts survive restarts."""
+        for record in self._ledger.records():
+            self._metrics.processed += 1
+            self._metrics.by_category[record.category] = (
+                self._metrics.by_category.get(record.category, 0) + 1
+            )
+            if record.action is TriageAction.TRANSITIONED:
+                self._metrics.transitioned += 1
+            elif record.action is TriageAction.ESCALATED:
+                self._metrics.escalated += 1
+            if record.agent:
+                self._metrics.by_agent[record.agent] = (
+                    self._metrics.by_agent.get(record.agent, 0) + 1
+                )
 
     # -- helpers --------------------------------------------------------------
 

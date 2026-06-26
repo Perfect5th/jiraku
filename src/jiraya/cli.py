@@ -56,6 +56,21 @@ def load_env_file(path: str | os.PathLike[str], *, override: bool = False) -> bo
     return True
 
 
+def _default_state_db() -> str:
+    base = os.environ.get("XDG_STATE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "state")
+    return os.path.join(base, "jiraya", "state.db")
+
+
+def _resolve_state_db(args: argparse.Namespace) -> str | None:
+    if getattr(args, "no_state", False):
+        return None
+    if getattr(args, "state_db", None):
+        return args.state_db
+    # Persist by default only where it matters across restarts (the dashboard).
+    return _default_state_db() if getattr(args, "default_state", False) else None
+
+
 def _config_from_args(args: argparse.Namespace) -> JirayaConfig:
     jira = JiraConfig.from_env()
     # Safety: writing to a real Jira board requires an explicit --apply. Without
@@ -77,6 +92,7 @@ def _config_from_args(args: argparse.Namespace) -> JirayaConfig:
         require_repo=not args.no_require_repo,
         provision=args.provision,
         work=args.work,
+        state_db_path=_resolve_state_db(args),
         jira=jira,
     )
 
@@ -101,6 +117,11 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--learned-rules", default=None,
                         help="Path to persist repo-resolution rules learned from "
                              "inbox corrections.")
+    parser.add_argument("--state-db", default=None,
+                        help="SQLite file for persisting actioned tickets + the "
+                             "inbox across restarts.")
+    parser.add_argument("--no-state", action="store_true",
+                        help="Disable state persistence (in-memory only).")
     parser.add_argument("--no-require-repo", action="store_true",
                         help="Do not escalate tickets whose repository cannot be "
                              "resolved (skip the repo confidence gate).")
@@ -237,7 +258,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_tui = sub.add_parser("tui", help="Launch the real-time dashboard (default).")
     _add_common(p_tui)
-    p_tui.set_defaults(func=cmd_tui, interval=20.0)
+    p_tui.set_defaults(func=cmd_tui, interval=20.0, default_state=True)
 
     p_run = sub.add_parser("run", help="Run the triage harness headlessly.")
     _add_common(p_run)
@@ -246,7 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--cycles", type=int, default=None,
                        help="Stop after N poll cycles (default: run forever).")
     p_run.add_argument("--no-color", action="store_true", help="Disable colored output.")
-    p_run.set_defaults(func=cmd_run)
+    p_run.set_defaults(func=cmd_run, default_state=False)
 
     p_work = sub.add_parser(
         "work",
@@ -255,7 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_work.add_argument("ticket", help="The Jira ticket key (e.g. PROJ-123).")
     p_work.add_argument("instruction", help="What the agent should do.")
     p_work.add_argument("--no-color", action="store_true", help="Disable colored output.")
-    p_work.set_defaults(func=cmd_work, interval=20.0)
+    p_work.set_defaults(func=cmd_work, interval=20.0, default_state=False)
 
     return parser
 

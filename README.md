@@ -51,7 +51,8 @@ logic is fully decoupled from Jira, the LLM, and the front-end:
   `TriagePoller`.
 - **`adapters/`** — `inmemory` (default, offline), `jira` (real REST API),
   `classifier` (keyword + Copilot CLI), `resolver` (registry + learned + keyword),
-  `workspace` (noop + git), `work_runner` (noop + Copilot), `agents`.
+  `workspace` (noop + git), `work_runner` (noop + Copilot), `sqlite` (durable
+  inbox + ledger), `agents`.
 - **`tui/`** — the Textual dashboard (a driving adapter).
 - **`composition.py`** — the composition root that wires everything together.
 
@@ -297,6 +298,25 @@ ticket's Jira status (the harness only ever writes the *In Progress*
 transition, and only with `--apply`). The native Jira **issue type** (Bug,
 Story, Epic, …) is used as a strong classification signal.
 
+## State persistence
+
+Actioned tickets and the exception inbox are persisted to a **SQLite file** so
+the dashboard survives restarts: on launch it restores the previously-actioned
+tickets, the open inbox items (which you can still answer), the cumulative
+metrics, and each ticket's provisioned workspace. The poller also skips tickets
+it has already actioned, so nothing is re-triaged after a restart.
+
+The `tui` command persists by default to `$XDG_STATE_HOME/jiraya/state.db`
+(`~/.local/state/jiraya/state.db`). Override or disable it:
+
+```bash
+uv run jiraya tui --state-db /path/to/state.db   # custom location
+uv run jiraya tui --no-state                      # in-memory only
+uv run jiraya run --once --state-db state.db      # opt-in for headless runs
+```
+
+(`run` and `work` don't persist unless you pass `--state-db`.)
+
 ## Test
 
 ```bash
@@ -305,5 +325,6 @@ uv run pytest
 
 The suite covers the domain, the harness, every adapter (including the Jira
 REST adapter via `httpx.MockTransport`, token pagination, the read-only
-dry-run wrapper, and the Copilot classifier via an injected runner), and the
-TUI via Textual's headless pilot.
+dry-run wrapper, the Copilot classifier via an injected runner, and the SQLite
+state store round-tripping across restarts), and the TUI via Textual's headless
+pilot.

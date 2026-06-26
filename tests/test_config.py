@@ -93,7 +93,7 @@ def _args(**overrides):
         classifier_model=None, work_model=None, copilot_fallback=False,
         dry_run=False, apply=False,
         repo_registry=None, learned_rules=None, no_require_repo=False, provision=False,
-        work=False,
+        work=False, state_db=None, no_state=False, default_state=False,
     )
     for k, v in overrides.items():
         setattr(ns, k, v)

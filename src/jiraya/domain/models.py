@@ -222,12 +222,51 @@ class TriageOutcome:
     resolution: RepoResolution | None = None
     workspace: str = ""  # local clone path when a workspace was provisioned
     work: "WorkResult | None" = None  # result of the agent starting work
+    stage: EscalationStage | None = None  # the stage at which it was escalated
     note: str = ""
     at: datetime = field(default_factory=utcnow)
 
     @property
     def escalated(self) -> bool:
         return self.action is TriageAction.ESCALATED
+
+
+@dataclass(frozen=True, slots=True)
+class TriageRecord:
+    """A persisted projection of a :class:`TriageOutcome` (the actioned-ticket
+    ledger). Holds just what the dashboard needs to remember a ticket across
+    restarts, without reconstructing the full outcome graph."""
+
+    ticket_key: str
+    action: TriageAction
+    category: TicketCategory
+    agent: str = ""
+    repo: str = ""          # repo key
+    workspace: str = ""
+    pr_url: str = ""
+    question: str = ""      # the agent's blocking question, if any
+    stage: EscalationStage | None = None
+    note: str = ""
+    at: datetime = field(default_factory=utcnow)
+
+    @classmethod
+    def from_outcome(cls, outcome: "TriageOutcome") -> "TriageRecord":
+        repo = ""
+        if outcome.resolution is not None and outcome.resolution.repo is not None:
+            repo = outcome.resolution.repo.key
+        return cls(
+            ticket_key=outcome.ticket_key,
+            action=outcome.action,
+            category=outcome.classification.category,
+            agent=outcome.agent or "",
+            repo=repo,
+            workspace=outcome.workspace,
+            pr_url=(outcome.work.pr_url if outcome.work else ""),
+            question=(outcome.work.question if outcome.work else ""),
+            stage=outcome.stage,
+            note=outcome.note,
+            at=outcome.at,
+        )
 
 
 

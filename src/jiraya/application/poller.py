@@ -48,13 +48,13 @@ class TriagePoller:
         tickets = await asyncio.to_thread(self._source.fetch_untriaged)
         self._events.publish(TicketsFetched(tickets=tuple(tickets)))
 
-        # Skip tickets already awaiting human review so repeated polls don't
-        # create duplicate inbox entries (important once escalation no longer
-        # changes the ticket's Jira status).
-        pending = self._open_inbox_keys()
+        # Skip tickets we've already actioned (persisted ledger, so this holds
+        # across restarts) or that are awaiting human review, so repeated polls
+        # never re-process or create duplicate inbox entries.
+        skip = self._open_inbox_keys() | self._service.actioned_keys()
         outcomes: list[TriageOutcome] = []
         for ticket in tickets:
-            if ticket.key in pending:
+            if ticket.key in skip:
                 continue
             outcome = await asyncio.to_thread(self._service.triage_ticket, ticket)
             outcomes.append(outcome)

@@ -2,3 +2,6 @@
 .jira.env
 __pycache__/
 *.py[codz]
+*.db
+*.db-journal
+*.db-wal

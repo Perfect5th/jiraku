@@ -218,6 +218,29 @@ async def test_activity_header_shows_active_worker_count(wait_for):
         assert ok
 
 
+async def test_dashboard_rehydrates_actioned_tickets_from_state(wait_for, tmp_path):
+    from jiraya.composition import build_system
+    db = str(tmp_path / "state.db")
+    # Populate the store with a full triage cycle, then close it.
+    seed = build_system(JirayaConfig(source="memory", state_db_path=db))
+    await seed.poller.run_once()
+    seed.inbox.close()
+
+    # A fresh dashboard on the same DB restores the actioned tickets + inbox
+    # on mount, before any polling.
+    app = JirayaApp(
+        system=build_system(JirayaConfig(source="memory", state_db_path=db)),
+        poll_interval=10_000)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.query_one("#tickets", DataTable).row_count == 8
+        assert app.query_one("#inbox", DataTable).row_count == 4
+        assert app._system.service.metrics.processed == 8
+        # Workspaces are restored so on-demand follow-up still works.
+        assert "PROJ-101" in app._workspaces
+    app._system.inbox.close()
+
+
 async def test_work_question_modal_answer_resumes(wait_for):
     # A WORK-stage entry's modal answers via the note and resumes work.
     app = _make_app()

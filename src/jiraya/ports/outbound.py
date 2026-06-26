@@ -17,6 +17,8 @@ from ..domain import (
     Ticket,
     TicketCategory,
     TicketStatus,
+    TriageOutcome,
+    TriageRecord,
     ValidationResult,
     WorkResult,
 )
@@ -183,6 +185,21 @@ class InboxRepository(Protocol):
     def open_entries(self) -> list[InboxEntry]: ...
 
     def resolve(self, entry_id: str, resolution: str) -> InboxEntry | None: ...
+
+
+@runtime_checkable
+class TriageLedger(Protocol):
+    """Durable record of every ticket the harness has actioned.
+
+    Enables the dashboard to remember actioned tickets across restarts and the
+    poller to avoid re-actioning them.
+    """
+
+    def record(self, outcome: "TriageOutcome") -> None: ...
+
+    def actioned_keys(self) -> set[str]: ...
+
+    def records(self) -> list["TriageRecord"]: ...
 
 
 # An event handler receives a single domain event. Handlers must be cheap or

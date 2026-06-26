@@ -21,6 +21,7 @@ from .adapters.inmemory import (
     InMemoryEventBus,
     InMemoryInboxRepository,
     InMemoryTicketSource,
+    InMemoryTriageLedger,
 )
 from .adapters.jira import JiraRestTicketSource
 from .adapters.resolver import (
@@ -33,6 +34,7 @@ from .adapters.resolver import (
     default_catalog,
     load_catalog,
 )
+from .adapters.sqlite import SqliteStateStore
 from .adapters.workspace import GitWorkspaceProvisioner, NoopWorkspaceProvisioner
 from .application import AgentRouter, TriagePoller, TriageService
 from .domain import ActivityLevel, ActivityLogged, AgentActivity
@@ -43,6 +45,7 @@ from .ports import (
     LearnedRulesStore,
     RepoResolver,
     TicketSource,
+    TriageLedger,
     WorkAgentRunner,
     WorkspaceProvisioner,
 )
@@ -93,6 +96,7 @@ class JirayaConfig:
     require_repo: bool = True                 # gate on confident repo resolution
     provision: bool = False                   # actually `git clone` workspaces
     work: bool = False                        # run the work agent (Copilot) + open PRs
+    state_db_path: str | None = None          # SQLite file for the inbox + ledger
     jira: JiraConfig = field(default_factory=JiraConfig)
 
     def resolve_source(self) -> str:
@@ -116,6 +120,7 @@ class JirayaSystem:
     learned_store: LearnedRulesStore
     provisioner: WorkspaceProvisioner
     work_runner: WorkAgentRunner
+    ledger: TriageLedger
     source_mode: str = "memory"
     dry_run: bool = False
 
@@ -193,7 +198,15 @@ def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
     mode = config.resolve_source()
 
     bus = InMemoryEventBus()
-    inbox = InMemoryInboxRepository()
+    # State persistence: one SQLite file backs both the inbox and the ledger
+    # when configured, so actioned tickets survive restarts.
+    if config.state_db_path:
+        store = SqliteStateStore(config.state_db_path)
+        inbox: InboxRepository = store
+        ledger: TriageLedger = store
+    else:
+        inbox = InMemoryInboxRepository()
+        ledger = InMemoryTriageLedger()
     classifier = build_classifier(config)
     router = AgentRouter(default_agents())
     learned_store = build_learned_store(config)
@@ -221,6 +234,7 @@ def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
         provisioner=provisioner,
         work_runner=work_runner,
         learned_store=learned_store,
+        ledger=ledger,
         confidence_threshold=config.confidence_threshold,
         require_repo=config.require_repo,
     )
@@ -242,6 +256,7 @@ def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
         learned_store=learned_store,
         provisioner=provisioner,
         work_runner=work_runner,
+        ledger=ledger,
         source_mode=mode,
         dry_run=dry_run,
     )
