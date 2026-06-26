@@ -30,3 +30,15 @@ class InMemoryTriageLedger(TriageLedger):
     def records(self) -> list[TriageRecord]:
         with self._lock:
             return [self._records[k] for k in self._order]
+
+    def get_record(self, ticket_key: str) -> TriageRecord | None:
+        with self._lock:
+            return self._records.get(ticket_key)
+
+    def forget(self, ticket_key: str) -> bool:
+        with self._lock:
+            if ticket_key not in self._records:
+                return False
+            del self._records[ticket_key]
+            self._order.remove(ticket_key)
+            return True

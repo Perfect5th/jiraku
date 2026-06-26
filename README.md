@@ -206,7 +206,8 @@ uv run jiraya            # or: uv run jiraya tui
 
 Dashboard keys: `p` poll now · `g` inject a demo ticket · `d` open the
 detail/respond view for the selected inbox item · `r` resolve it · `w` prompt the
-agent for follow-up work on the selected ticket · `q` quit.
+agent for follow-up work on the selected ticket · `x` forget the selected ticket
+(drop it from the ledger/inbox so it can be re-triaged) · `q` quit.
 
 The **Agent activity** panel header shows a live count of **active workers** —
 tickets currently In Progress with a worker agent engaged (not yet PR'd or
@@ -316,6 +317,23 @@ uv run jiraya run --once --state-db state.db      # opt-in for headless runs
 ```
 
 (`run` and `work` don't persist unless you pass `--state-db`.)
+
+### Forgetting a ticket
+
+Persistence is durable, so an actioned ticket normally never comes back. To
+deliberately drop one — clearing it from the ledger **and** any open inbox items
+so it disappears from the dashboard and becomes eligible for re-triage on the
+next poll — use the `x` key in the dashboard (a confirm prompt guards the
+action) or the CLI:
+
+```bash
+uv run jiraya forget PROJ-123                    # default dashboard store
+uv run jiraya forget PROJ-123 --state-db state.db
+```
+
+Forgetting reverses that ticket's contribution to the metrics and persists the
+removal across restarts; the next poll re-triages it if it is still untriaged in
+Jira.
 
 ## Test
 

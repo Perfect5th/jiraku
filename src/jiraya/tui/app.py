@@ -34,6 +34,7 @@ from ..domain import (
     TicketCategory,
     TicketClassified,
     TicketEscalated,
+    TicketForgotten,
     TicketRepoResolved,
     TicketRouted,
     TicketStatus,
@@ -47,6 +48,7 @@ from ..domain import (
 from ..adapters.inmemory import InMemoryTicketSource, random_ticket
 from .detail import InboxDetailScreen
 from .followup import FollowupScreen
+from .confirm import ConfirmScreen
 
 # Explicit truecolor palette chosen for ≥4.5:1 contrast on both the normal dark
 # rows and the muted selected-row highlight (so colours never wash out when a
@@ -170,6 +172,7 @@ class JirayaApp(App):
         ("d", "detail", "Detail / respond"),
         ("w", "followup", "Prompt agent"),
         ("r", "resolve", "Resolve inbox"),
+        ("x", "forget", "Forget ticket"),
         ("q", "quit", "Quit"),
     ]
 
@@ -347,6 +350,8 @@ class JirayaApp(App):
                 self._workspaces[o.ticket_key] = o.workspace
             if o.action is TriageAction.ESCALATED:
                 self._update(o.ticket_key, "outcome", Text("Review ⚠", style=f"bold {_C_UNKNOWN}"))
+        elif isinstance(event, TicketForgotten):
+            self._forget_ticket_rows(event.ticket_key)
 
     # -- widget helpers -------------------------------------------------------
 
@@ -515,6 +520,24 @@ class JirayaApp(App):
             pass
         self._inbox_entries.pop(entry_id, None)
 
+    def _forget_ticket_rows(self, ticket_key: str) -> None:
+        """Remove a forgotten ticket and its inbox items from the dashboard."""
+        if ticket_key in self._ticket_rows:
+            table = self.query_one("#tickets", DataTable)
+            try:
+                table.remove_row(ticket_key)
+            except Exception:  # noqa: BLE001 - already gone
+                pass
+            self._ticket_rows.discard(ticket_key)
+        for entry_id in [
+            eid for eid, e in self._inbox_entries.items()
+            if e.ticket_key == ticket_key
+        ]:
+            self._remove_inbox_row(entry_id)
+        self._workspaces.pop(ticket_key, None)
+        self._discard_worker(ticket_key)
+        self._render_metrics(self._system.service.metrics.snapshot())
+
     def action_resolve(self) -> None:
         entry_id = self._selected_inbox_id()
         if entry_id is None:
@@ -525,6 +548,37 @@ class JirayaApp(App):
             self._log_line(f"Resolved inbox item for [b]{resolved.ticket_key}[/].",
                            ActivityLevel.SUCCESS)
             self._render_metrics(self._system.service.metrics.snapshot())
+
+    def action_forget(self) -> None:
+        """Forget the selected ticket: remove it from the ledger + inbox so it
+        drops off the dashboard and can be re-triaged on the next poll."""
+        key = self._selected_ticket_key()
+        if key is None:
+            self._log_line("Select a ticket first (Tab to the Tickets table).",
+                           ActivityLevel.INFO)
+            return
+        self.push_screen(
+            ConfirmScreen(
+                f"Forget {key}?",
+                f"This removes [b]{key}[/b] from the durable ledger and clears any "
+                "inbox items for it. The ticket will be re-triaged on the next poll "
+                "if it is still untriaged in Jira.",
+                confirm_label="Forget",
+                confirm_variant="error",
+            ),
+            lambda ok: self._on_forget(key, ok),
+        )
+
+    def _on_forget(self, ticket_key: str, confirmed: bool | None) -> None:
+        if not confirmed:
+            return
+        removed = self._system.service.forget_ticket(ticket_key)
+        if removed:
+            self._log_line(f"Forgot [b]{ticket_key}[/]; eligible for re-triage.",
+                           ActivityLevel.SUCCESS)
+        else:
+            self._log_line(f"Nothing to forget for [b]{ticket_key}[/].",
+                           ActivityLevel.INFO)
 
     def action_detail(self) -> None:
         """Open the expandable detail + respond modal for the selected entry."""

@@ -15,6 +15,7 @@ from .events import (
     TicketRouted,
     TicketTransitioned,
     TicketTriaged,
+    TicketForgotten,
     TicketsFetched,
 )
 from .models import (
@@ -75,5 +76,6 @@ __all__ = [
     "TicketRouted",
     "TicketTransitioned",
     "TicketTriaged",
+    "TicketForgotten",
     "TicketsFetched",
 ]

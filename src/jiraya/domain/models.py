@@ -380,6 +380,22 @@ class TriageMetrics:
         if outcome.agent:
             self.by_agent[outcome.agent] = self.by_agent.get(outcome.agent, 0) + 1
 
+    def forget(self, record: "TriageRecord") -> None:
+        """Reverse the tally contributed by a single ledger record."""
+        self.processed = max(0, self.processed - 1)
+        if self.by_category.get(record.category):
+            self.by_category[record.category] -= 1
+            if self.by_category[record.category] <= 0:
+                del self.by_category[record.category]
+        if record.action is TriageAction.TRANSITIONED:
+            self.transitioned = max(0, self.transitioned - 1)
+        elif record.action is TriageAction.ESCALATED:
+            self.escalated = max(0, self.escalated - 1)
+        if record.agent and self.by_agent.get(record.agent):
+            self.by_agent[record.agent] -= 1
+            if self.by_agent[record.agent] <= 0:
+                del self.by_agent[record.agent]
+
     @property
     def automation_rate(self) -> float:
         """Share of processed tickets handled without human escalation."""

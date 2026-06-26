@@ -29,6 +29,7 @@ from ..domain import (
     TicketCategory,
     TicketClassified,
     TicketEscalated,
+    TicketForgotten,
     TicketRepoResolved,
     TicketRouted,
     TicketStatus,
@@ -79,6 +80,12 @@ class _NullLedger:
 
     def records(self) -> list:
         return []
+
+    def get_record(self, ticket_key):  # noqa: ANN001
+        return None
+
+    def forget(self, ticket_key) -> bool:  # noqa: ANN001
+        return False
 
 
 class TriageService:
@@ -637,6 +644,28 @@ class TriageService:
     def actioned_keys(self) -> set[str]:
         """Ticket keys the harness has already actioned (across restarts)."""
         return self._ledger.actioned_keys()
+
+    def forget_ticket(self, ticket_key: str) -> bool:
+        """Forget a previously actioned ticket: drop it from the durable ledger
+        and the inbox so it disappears from the dashboard and can be re-triaged
+        on the next poll. Returns ``True`` if anything was removed."""
+        record = self._ledger.get_record(ticket_key)
+        removed_ledger = self._ledger.forget(ticket_key)
+        removed_inbox = self._inbox.delete_for_ticket(ticket_key)
+        if not removed_ledger and not removed_inbox:
+            return False
+        if record is not None:
+            self._metrics.forget(record)
+        self._events.publish(TicketForgotten(ticket_key=ticket_key))
+        self._events.publish(MetricsUpdated(metrics=self._metrics.snapshot()))
+        self._log(
+            "harness",
+            ticket_key,
+            f"Forgotten ({removed_inbox} inbox item(s) cleared); "
+            "eligible for re-triage.",
+            level=ActivityLevel.WARNING,
+        )
+        return True
 
     def _restore_metrics(self) -> None:
         """Seed metrics from the persisted ledger so counts survive restarts."""

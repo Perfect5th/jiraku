@@ -14,6 +14,7 @@ from jiraya.domain import (
 )
 from jiraya.tui import JirayaApp
 from jiraya.tui.detail import InboxDetailScreen
+from jiraya.tui.confirm import ConfirmScreen
 
 
 def _make_app() -> JirayaApp:
@@ -332,3 +333,35 @@ async def test_respond_with_repo_unblocks_repository_stage(wait_for):
             Classification(TicketCategory.BUG, "API", 0.9),
         )
         assert res.is_confident and res.repo.key == "acme/api"
+
+async def test_forget_action_removes_ticket_and_inbox_rows(wait_for):
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        tickets = app.query_one("#tickets", DataTable)
+        inbox = app.query_one("#inbox", DataTable)
+        assert tickets.row_count == 8 and inbox.row_count == 4
+        # Row 1 is PROJ-102, which escalated (so it also has an inbox row).
+        app.query_one("#tickets", DataTable).move_cursor(row=1)
+
+        # Cancelling the confirm modal leaves everything intact.
+        app.action_forget()
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmScreen)
+        app.screen.query_one("#cancel", Button).press()
+        await pilot.pause()
+        assert tickets.row_count == 8 and "PROJ-102" in app._ticket_rows
+
+        # Confirming forgets the ticket: its row and inbox item disappear.
+        app.action_forget()
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmScreen)
+        app.screen.query_one("#confirm", Button).press()
+
+        ok = await wait_for(pilot, lambda: tickets.row_count == 7)
+        assert ok
+        assert "PROJ-102" not in app._ticket_rows
+        assert inbox.row_count == 3
+        assert not any(e.ticket_key == "PROJ-102"
+                       for e in app._inbox_entries.values())
+        assert "PROJ-102" not in app._system.service.actioned_keys()

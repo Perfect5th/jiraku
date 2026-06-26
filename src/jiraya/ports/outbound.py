@@ -186,6 +186,9 @@ class InboxRepository(Protocol):
 
     def resolve(self, entry_id: str, resolution: str) -> InboxEntry | None: ...
 
+    def delete_for_ticket(self, ticket_key: str) -> int:
+        """Hard-delete every inbox entry for a ticket; return the count removed."""
+
 
 @runtime_checkable
 class TriageLedger(Protocol):
@@ -200,6 +203,11 @@ class TriageLedger(Protocol):
     def actioned_keys(self) -> set[str]: ...
 
     def records(self) -> list["TriageRecord"]: ...
+
+    def get_record(self, ticket_key: str) -> "TriageRecord | None": ...
+
+    def forget(self, ticket_key: str) -> bool:
+        """Delete a ticket's record so it can be actioned again; return removed."""
 
 
 # An event handler receives a single domain event. Handlers must be cheap or

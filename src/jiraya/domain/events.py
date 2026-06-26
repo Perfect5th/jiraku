@@ -94,6 +94,11 @@ class TicketTriaged(DomainEvent):
 
 
 @dataclass(frozen=True, slots=True)
+class TicketForgotten(DomainEvent):
+    ticket_key: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class PollCycleCompleted(DomainEvent):
     cycle: int = 0
     processed: int = 0

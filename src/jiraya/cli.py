@@ -249,6 +249,21 @@ def cmd_work(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_forget(args: argparse.Namespace) -> int:
+    """Forget an actioned ticket so it can be re-triaged on the next poll."""
+    _bootstrap_env(args)
+    config = _config_from_args(args)
+    system = build_system(config)
+    removed = system.service.forget_ticket(args.ticket)
+    if removed:
+        print(f"Forgot {args.ticket}: removed from the ledger/inbox; "
+              "it will be re-triaged on the next poll if still untriaged in Jira.")
+        return 0
+    print(f"Nothing to forget for {args.ticket} (not in the ledger or inbox).",
+          file=sys.stderr)
+    return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jiraya",
@@ -277,6 +292,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_work.add_argument("instruction", help="What the agent should do.")
     p_work.add_argument("--no-color", action="store_true", help="Disable colored output.")
     p_work.set_defaults(func=cmd_work, interval=20.0, default_state=False)
+
+    p_forget = sub.add_parser(
+        "forget",
+        help="Forget an actioned ticket so it can be re-triaged on the next poll.")
+    _add_common(p_forget)
+    p_forget.add_argument("ticket", help="The Jira ticket key to forget (e.g. PROJ-123).")
+    p_forget.set_defaults(func=cmd_forget, default_state=True)
 
     return parser
 

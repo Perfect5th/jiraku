@@ -164,6 +164,13 @@ class SqliteStateStore(InboxRepository, TriageLedger):
             self._conn.commit()
         return resolved
 
+    def delete_for_ticket(self, ticket_key: str) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM inbox WHERE ticket_key = ?", (ticket_key,))
+            self._conn.commit()
+            return cur.rowcount
+
     # -- TriageLedger ---------------------------------------------------------
 
     def record(self, outcome: TriageOutcome) -> None:
@@ -190,6 +197,19 @@ class SqliteStateStore(InboxRepository, TriageLedger):
             rows = self._conn.execute(
                 "SELECT * FROM ledger ORDER BY seq ASC").fetchall()
         return [_row_to_record(r) for r in rows]
+
+    def get_record(self, ticket_key: str) -> TriageRecord | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM ledger WHERE ticket_key = ?", (ticket_key,)).fetchone()
+        return _row_to_record(row) if row else None
+
+    def forget(self, ticket_key: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM ledger WHERE ticket_key = ?", (ticket_key,))
+            self._conn.commit()
+            return cur.rowcount > 0
 
 
 def _row_to_entry(row: sqlite3.Row) -> InboxEntry:

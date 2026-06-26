@@ -40,3 +40,11 @@ class InMemoryInboxRepository(InboxRepository):
             resolved = entry.resolved(resolution)
             self._entries[entry_id] = resolved
             return resolved
+
+    def delete_for_ticket(self, ticket_key: str) -> int:
+        with self._lock:
+            ids = [i for i, e in self._entries.items() if e.ticket_key == ticket_key]
+            for i in ids:
+                del self._entries[i]
+                self._order.remove(i)
+            return len(ids)
