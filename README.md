@@ -135,6 +135,23 @@ branch/workspace** with your answer (it does **not** re-triage). If the agent
 gets stuck again it raises a fresh question; otherwise it finishes and opens the
 PR.
 
+### On-demand follow-up work
+
+Already-worked tickets keep their provisioned workspace, so you can re-engage the
+agent at any time — e.g. to action outside feedback on a PR. In the dashboard,
+select the ticket and press `w`, then type an instruction; the agent runs in that
+ticket's **existing workspace/branch** (no re-triage, no status change) and
+opens/updates the PR. From the shell:
+
+```bash
+uv run jiraya work PROJ-123 "Address review feedback: rename the flag and add a test" \
+  --work --apply --repo-registry examples/repo_registry.yaml
+```
+
+A follow-up reuses the existing checkout (no re-clone), so the agent continues on
+the same branch. If it gets blocked it raises a `NEEDS_INPUT` question just like
+initial work; a clone failure escalates at the `provisioning` stage.
+
 ### Model selection
 
 The classifier model and the work model are configured **separately**:
@@ -187,7 +204,12 @@ uv run jiraya            # or: uv run jiraya tui
 ```
 
 Dashboard keys: `p` poll now · `g` inject a demo ticket · `d` open the
-detail/respond view for the selected inbox item · `r` resolve it · `q` quit.
+detail/respond view for the selected inbox item · `r` resolve it · `w` prompt the
+agent for follow-up work on the selected ticket · `q` quit.
+
+The **Agent activity** panel header shows a live count of **active workers** —
+tickets currently In Progress with a worker agent engaged (not yet PR'd or
+surfaced to the inbox).
 
 ### Inbox detail & responding
 

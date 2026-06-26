@@ -10,6 +10,7 @@ from jiraya.domain import (
     Priority,
     RepoRef,
     Ticket,
+    TicketEscalated,
 )
 from jiraya.tui import JirayaApp
 from jiraya.tui.detail import InboxDetailScreen
@@ -194,6 +195,29 @@ async def test_tickets_table_shows_needs_input(wait_for):
         assert ok
 
 
+async def test_activity_header_shows_active_worker_count(wait_for):
+    from jiraya.domain import TicketWorkStarted, WorkResult
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        log = app.query_one("#activity", RichLog)
+        # Four tickets transitioned to In Progress -> four engaged workers.
+        ok = await wait_for(pilot, lambda: "4 active workers" in str(log.border_title))
+        assert ok
+        # A worker that opens a PR is no longer active.
+        app._system.bus.publish(TicketWorkStarted(
+            ticket_key="PROJ-101", agent="bug-agent",
+            result=WorkResult(started=True, pr_url="https://x/pull/1"),
+        ))
+        ok = await wait_for(pilot, lambda: "3 active workers" in str(log.border_title))
+        assert ok
+        # A worker blocked & surfaced to the inbox is no longer active either.
+        app._system.bus.publish(TicketEscalated(entry=InboxEntry(
+            id="z", ticket_key="WEB-200", reason="blocked", stage=EscalationStage.WORK)))
+        ok = await wait_for(pilot, lambda: "2 active workers" in str(log.border_title))
+        assert ok
+
+
 async def test_work_question_modal_answer_resumes(wait_for):
     # A WORK-stage entry's modal answers via the note and resumes work.
     app = _make_app()
@@ -216,6 +240,41 @@ async def test_work_question_modal_answer_resumes(wait_for):
         assert "Answer & resume work" in str(
             app.screen.query_one("#rerun", Button).label)
         assert app.screen.focused is app.screen.query_one("#note", Input)
+
+
+async def test_followup_modal_runs_agent_in_workspace(wait_for):
+    from jiraya.tui.followup import FollowupScreen
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        # PROJ-101 transitioned, so the dashboard recorded its workspace.
+        await wait_for(pilot, lambda: "PROJ-101" in app._workspaces)
+        app.query_one("#tickets", DataTable).move_cursor(row=0)
+
+        app.action_followup()
+        await pilot.pause()
+        assert isinstance(app.screen, FollowupScreen)
+        app.screen.query_one("#instruction", Input).value = "Address review feedback"
+        app.screen.query_one("#run", Button).press()
+
+        runner = app._system.work_runner  # NoopWorkAgentRunner in the demo
+        ok = await wait_for(pilot, lambda: any(k == "PROJ-101" for k, _ in runner.runs))
+        assert ok
+
+
+async def test_followup_requires_provisioned_workspace(wait_for):
+    from jiraya.tui.followup import FollowupScreen
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        # Row 1 is PROJ-102, which escalated (no provisioned workspace).
+        app.query_one("#tickets", DataTable).move_cursor(row=1)
+        assert "PROJ-102" not in app._workspaces
+
+        app.action_followup()
+        await pilot.pause()
+        # No modal is opened for a ticket without a workspace.
+        assert not isinstance(app.screen, FollowupScreen)
 
 
 async def test_respond_with_repo_unblocks_repository_stage(wait_for):

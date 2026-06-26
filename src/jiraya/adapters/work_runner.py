@@ -65,6 +65,19 @@ On the final line, print exactly: PR_URL: <the pull request URL>
 {sentinel}
 """
 
+_FOLLOWUP_TEMPLATE = """\
+You are doing further on-demand work on Jira ticket {key} in the repository
+checked out in the current working directory. The branch "{branch}" already
+contains your earlier work.
+
+A human has requested the following additional work: {instruction}
+
+Make the change on that branch, commit, push, and open or update the pull
+request. On the final line, print exactly: PR_URL: <the pull request URL>
+
+{sentinel}
+"""
+
 
 class NoopWorkAgentRunner:
     """Records the request and does nothing (safe default / dry-run / tests)."""
@@ -79,6 +92,7 @@ class NoopWorkAgentRunner:
         resolution: RepoResolution | None,
         workspace: str,
         answer: str | None = None,
+        instruction: str | None = None,
     ) -> WorkResult:
         self.runs.append((ticket.key, workspace))
         return WorkResult.skipped("Work agent not configured (no-op).")
@@ -111,6 +125,7 @@ class CopilotWorkAgentRunner:
         resolution: RepoResolution | None,
         workspace: str,
         answer: str | None = None,
+        instruction: str | None = None,
     ) -> WorkResult:
         if not workspace or not Path(workspace).is_dir():
             return WorkResult.skipped(
@@ -121,6 +136,11 @@ class CopilotWorkAgentRunner:
         if answer:
             prompt = _RESUME_TEMPLATE.format(
                 key=ticket.key, answer=answer, branch=branch, sentinel=_SENTINEL,
+            )
+        elif instruction:
+            prompt = _FOLLOWUP_TEMPLATE.format(
+                key=ticket.key, instruction=instruction, branch=branch,
+                sentinel=_SENTINEL,
             )
         else:
             prompt = _PROMPT_TEMPLATE.format(

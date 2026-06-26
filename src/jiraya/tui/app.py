@@ -46,6 +46,7 @@ from ..domain import (
 )
 from ..adapters.inmemory import InMemoryTicketSource, random_ticket
 from .detail import InboxDetailScreen
+from .followup import FollowupScreen
 
 # Explicit truecolor palette chosen for ≥4.5:1 contrast on both the normal dark
 # rows and the muted selected-row highlight (so colours never wash out when a
@@ -156,6 +157,7 @@ class JirayaApp(App):
         ("p", "poll", "Poll now"),
         ("g", "generate", "New ticket"),
         ("d", "detail", "Detail / respond"),
+        ("w", "followup", "Prompt agent"),
         ("r", "resolve", "Resolve inbox"),
         ("q", "quit", "Quit"),
     ]
@@ -174,6 +176,8 @@ class JirayaApp(App):
         self._poke = asyncio.Event()
         self._unsubscribe = None
         self._ticket_rows: set[str] = set()
+        self._active_workers: set[str] = set()
+        self._workspaces: dict[str, str] = {}  # ticket_key -> provisioned workspace
         self._inbox_entries: dict[str, InboxEntry] = {}
         self._cols: dict[str, object] = {}
         self._inbox_cols: dict[str, object] = {}
@@ -203,6 +207,7 @@ class JirayaApp(App):
         inbox.border_title = "Inbox — exceptions (d: detail/respond · r: resolve)"
 
         self.query_one("#activity", RichLog).border_title = "Agent activity"
+        self._update_activity_header()
         tickets.border_title = "Tickets"
 
         self._render_metrics(self._system.service.metrics.snapshot())
@@ -266,11 +271,16 @@ class JirayaApp(App):
         elif isinstance(event, TicketTransitioned):
             self._set_status(event.ticket_key, event.to_status or TicketStatus.IN_PROGRESS)
             self._update(event.ticket_key, "outcome", Text("In Progress ✓", style=f"bold {_C_DOC}"))
+            # A worker agent is now engaged on this In-Progress ticket.
+            self._active_workers.add(event.ticket_key)
+            self._update_activity_header()
         elif isinstance(event, TicketWorkStarted):
             r = event.result
             if r is not None and r.opened_pr:
                 self._update(event.ticket_key, "outcome",
                              Text(f"PR {_pr_label(r.pr_url)} ↗", style=f"bold {_C_FEATURE}"))
+                # The worker delivered a PR — its task is done.
+                self._discard_worker(event.ticket_key)
             elif r is not None and r.needs_input:
                 self._update(event.ticket_key, "outcome",
                              Text("Needs input ⌨", style=f"bold {_C_UNKNOWN}"))
@@ -283,6 +293,8 @@ class JirayaApp(App):
                 self._update(entry.ticket_key, "outcome",
                              Text(label, style=f"bold {_C_UNKNOWN}"))
                 self._add_inbox_row(entry)
+                # A surfaced ticket is awaiting a human, not actively worked.
+                self._discard_worker(entry.ticket_key)
         elif isinstance(event, ActivityLogged) and event.activity is not None:
             a = event.activity
             self._log_line(f"[b]{a.agent}[/b] · {a.ticket_key}: {a.message}", a.level)
@@ -292,6 +304,8 @@ class JirayaApp(App):
             self._log_line(f"— poll cycle #{event.cycle} —", ActivityLevel.INFO)
         elif isinstance(event, TicketTriaged) and event.outcome is not None:
             o = event.outcome
+            if o.workspace:
+                self._workspaces[o.ticket_key] = o.workspace
             if o.action is TriageAction.ESCALATED:
                 self._update(o.ticket_key, "outcome", Text("Review ⚠", style=f"bold {_C_UNKNOWN}"))
 
@@ -347,6 +361,21 @@ class JirayaApp(App):
         style = _LEVEL_STYLE[level]
         log.write(f"[grey62]{ts}[/] [{style}]{glyph}[/] {markup}")
 
+    def _discard_worker(self, ticket_key: str) -> None:
+        if ticket_key in self._active_workers:
+            self._active_workers.discard(ticket_key)
+            self._update_activity_header()
+
+    def _update_activity_header(self) -> None:
+        """Show the live count of active worker agents on the activity panel."""
+        n = len(self._active_workers)
+        plural = "" if n == 1 else "s"
+        try:
+            log = self.query_one("#activity", RichLog)
+        except Exception:  # noqa: BLE001 - not mounted yet
+            return
+        log.border_title = f"Agent activity — {n} active worker{plural}"
+
     def _render_metrics(self, m: TriageMetrics) -> None:
         last = m.last_poll_at.astimezone().strftime("%H:%M:%S") if m.last_poll_at else "—"
         auto = f"{m.automation_rate * 100:.0f}%"
@@ -366,6 +395,56 @@ class JirayaApp(App):
 
     def action_poll(self) -> None:
         self._poke.set()
+
+    def _selected_ticket_key(self) -> str | None:
+        table = self.query_one("#tickets", DataTable)
+        if table.row_count == 0:
+            return None
+        try:
+            cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
+        except Exception:  # noqa: BLE001 - no valid cursor
+            return None
+        value = cell_key.row_key.value
+        return str(value) if value is not None else None
+
+    def action_followup(self) -> None:
+        """Prompt the work agent to do further work in a ticket's workspace."""
+        key = self._selected_ticket_key()
+        if key is None:
+            self._log_line("Select a ticket first (Tab to the Tickets table).",
+                           ActivityLevel.INFO)
+            return
+        workspace = self._workspaces.get(key)
+        if not workspace:
+            self._log_line(
+                f"[b]{key}[/b] has no provisioned workspace yet — it must be worked first.",
+                ActivityLevel.WARNING)
+            return
+        self.push_screen(
+            FollowupScreen(key, workspace, dry_run=self._system.dry_run),
+            lambda instruction: self._on_followup(key, instruction),
+        )
+
+    def _on_followup(self, ticket_key: str, instruction: str | None) -> None:
+        if not instruction:
+            return
+        self._active_workers.add(ticket_key)
+        self._update_activity_header()
+        self.run_worker(
+            self._followup(ticket_key, instruction),
+            name=f"followup-{ticket_key}", exclusive=False,
+        )
+
+    async def _followup(self, ticket_key: str, instruction: str) -> None:
+        try:
+            await asyncio.to_thread(
+                self._system.service.run_followup, ticket_key, instruction
+            )
+        except Exception as exc:  # noqa: BLE001 - surface, don't crash the UI
+            self._log_line(f"Follow-up work failed: {exc}", ActivityLevel.ERROR)
+        finally:
+            self._discard_worker(ticket_key)
+        self._render_metrics(self._system.service.metrics.snapshot())
 
     def action_generate(self) -> None:
         source = self._system.source

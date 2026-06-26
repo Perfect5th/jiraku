@@ -226,12 +226,70 @@ class TriageService:
         resolution = self._resolver.resolve(ticket, classification)
         workspace = entry.workspace or self._safe_provision(ticket, resolution)
         agent = entry.agent or "work-agent"
-
         self._log(agent, entry.ticket_key,
                   f"Resuming work on {entry.branch or 'the work branch'} with the answer.",
                   level=ActivityLevel.INFO)
+        return self._drive_work(ticket, classification, resolution, agent, workspace,
+                                answer=answer)
+
+    def run_followup(self, ticket_key: str, instruction: str) -> TriageOutcome | None:
+        """Prompt the work agent to do further work in a ticket's provisioned repo.
+
+        Use when actioning outside feedback (e.g. PR review comments): the agent
+        re-engages the existing workspace/branch with ``instruction`` — no
+        re-triage and no status change.
+        """
+        instruction = (instruction or "").strip()
+        if not instruction:
+            return None
+        ticket = self._source.get(ticket_key)
+        if ticket is None:
+            self._log("reviewer", ticket_key,
+                      "Could not run follow-up work: ticket not found.",
+                      level=ActivityLevel.ERROR)
+            return None
+        if self._work_runner is None:
+            self._log("reviewer", ticket_key,
+                      "Could not run follow-up work: no work agent configured.",
+                      level=ActivityLevel.ERROR)
+            return None
+
+        classification = self._classifier.classify(ticket)
+        resolution = self._resolver.resolve(ticket, classification)
+        agent = "work-agent"
+        try:
+            workspace = self._provision(ticket, agent, resolution)
+        except WorkspaceProvisionError as exc:
+            self._log(agent, ticket_key, f"Workspace provisioning failed: {exc.message}",
+                      level=ActivityLevel.ERROR)
+            return self._finish(self._escalate(
+                ticket, classification,
+                reason=(f"git clone failed for {resolution.repo if resolution else 'repo'}: "
+                        f"{exc.message} — examine the command and supply a corrected "
+                        f"repo upstream URL."),
+                agent=agent, stage=EscalationStage.PROVISIONING, resolution=resolution,
+                validation_details=exc.details(),
+            ))
+        self._log(agent, ticket_key,
+                  f"Running on-demand work in {resolution.repo or 'the workspace'}: {instruction}",
+                  level=ActivityLevel.INFO)
+        return self._drive_work(ticket, classification, resolution, agent, workspace,
+                                instruction=instruction)
+
+    def _drive_work(
+        self,
+        ticket: Ticket,
+        classification: Classification,
+        resolution: RepoResolution | None,
+        agent: str,
+        workspace: str,
+        *,
+        answer: str | None = None,
+        instruction: str | None = None,
+    ) -> TriageOutcome:
+        """Run the work agent and finish with a transition or a WORK escalation."""
         work = self._run_work(ticket, classification, agent, resolution, workspace,
-                              answer=answer)
+                              answer=answer, instruction=instruction)
         if work is not None and work.needs_input:
             return self._finish(self._escalate(
                 ticket, classification,
@@ -248,7 +306,7 @@ class TriageService:
             resolution=resolution,
             workspace=workspace,
             work=work,
-            note=(work.summary if work else "Resumed work."),
+            note=(work.summary if work else "Work agent engaged."),
         )
         return self._finish(outcome)
 
@@ -459,12 +517,14 @@ class TriageService:
         resolution: RepoResolution | None,
         workspace: str,
         answer: str | None = None,
+        instruction: str | None = None,
     ):
         if self._work_runner is None:
             return None
         try:
             result = self._work_runner.run(
-                ticket, classification, resolution, workspace, answer=answer
+                ticket, classification, resolution, workspace,
+                answer=answer, instruction=instruction,
             )
         except Exception as exc:  # noqa: BLE001 - running the agent is best-effort
             self._log(agent, ticket.key, f"Work agent error: {exc}",

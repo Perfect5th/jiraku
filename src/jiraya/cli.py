@@ -206,6 +206,28 @@ def cmd_tui(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_work(args: argparse.Namespace) -> int:
+    """Prompt the work agent to do further work in a ticket's provisioned repo."""
+    _bootstrap_env(args)
+    config = _config_from_args(args)
+    system = build_system(config)
+    color = sys.stdout.isatty() and not args.no_color
+    print(_banner(system))
+    if type(system.work_runner).__name__ == "NoopWorkAgentRunner":
+        print("Note: no work agent configured (pass --work --apply to do real work).")
+    system.bus.subscribe(_make_console_printer(color))
+
+    outcome = system.service.run_followup(args.ticket, args.instruction)
+    if outcome is None:
+        print(f"Could not run follow-up work for {args.ticket}.", file=sys.stderr)
+        return 1
+    if outcome.work and outcome.work.opened_pr:
+        print(f"\nOpened/updated PR: {outcome.work.pr_url}")
+    elif outcome.work and outcome.work.needs_input:
+        print(f"\nAgent needs input: {outcome.work.question}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jiraya",
@@ -225,6 +247,15 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Stop after N poll cycles (default: run forever).")
     p_run.add_argument("--no-color", action="store_true", help="Disable colored output.")
     p_run.set_defaults(func=cmd_run)
+
+    p_work = sub.add_parser(
+        "work",
+        help="Prompt the work agent to do further work in a ticket's repo.")
+    _add_common(p_work)
+    p_work.add_argument("ticket", help="The Jira ticket key (e.g. PROJ-123).")
+    p_work.add_argument("instruction", help="What the agent should do.")
+    p_work.add_argument("--no-color", action="store_true", help="Disable colored output.")
+    p_work.set_defaults(func=cmd_work, interval=20.0)
 
     return parser
 
