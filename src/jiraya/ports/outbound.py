@@ -136,7 +136,9 @@ class WorkAgentRunner(Protocol):
     """Engage a worker agent to actually do the work in a provisioned workspace.
 
     Called right after provisioning: e.g. invoke the Copilot CLI in the cloned
-    repo to implement the ticket and open a pull request.
+    repo to implement the ticket and open a pull request. When ``answer`` is
+    provided the agent *resumes* a previously-blocked run (on the same branch
+    and workspace) using the human's answer.
     """
 
     def run(
@@ -145,6 +147,7 @@ class WorkAgentRunner(Protocol):
         classification: Classification,
         resolution: RepoResolution | None,
         workspace: str,
+        answer: str | None = None,
     ) -> WorkResult: ...
 
 

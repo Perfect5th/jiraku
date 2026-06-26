@@ -165,15 +165,25 @@ class WorkResult:
     branch: str = ""
     pr_url: str = ""
     model: str = ""  # the model the work agent ran with
+    question: str = ""  # set when the agent is blocked and needs human input
     details: tuple[str, ...] = ()
 
     @property
     def opened_pr(self) -> bool:
         return bool(self.pr_url)
 
+    @property
+    def needs_input(self) -> bool:
+        return bool(self.question)
+
     @classmethod
     def skipped(cls, summary: str) -> "WorkResult":
         return cls(started=False, summary=summary)
+
+    @classmethod
+    def blocked(cls, question: str, *, branch: str = "", model: str = "") -> "WorkResult":
+        return cls(started=False, question=question, branch=branch, model=model,
+                   summary=f"Work agent is blocked and needs input: {question}")
 
 
 
@@ -194,6 +204,7 @@ class EscalationStage(str, Enum):
     REPOSITORY = "repository"
     VALIDATION = "validation"
     PROVISIONING = "provisioning"
+    WORK = "work"
 
     def __str__(self) -> str:
         return self.value
@@ -246,6 +257,8 @@ class InboxEntry:
     details: tuple[str, ...] = ()
     stage: EscalationStage = EscalationStage.CLASSIFICATION
     repo: RepoRef | None = None  # best-guess repo when known (esp. repository stage)
+    workspace: str = ""          # provisioned checkout (for resuming WORK-stage items)
+    branch: str = ""             # the work branch (for resuming WORK-stage items)
     status: InboxStatus = InboxStatus.OPEN
     created_at: datetime = field(default_factory=utcnow)
     resolved_at: datetime | None = None
@@ -279,6 +292,7 @@ class InboxResponse:
     comment_id: str | None = None
     taught: bool = False  # whether a repo rule was learned from this response
     retriaged: bool = False
+    resumed: bool = False  # whether blocked work was resumed (vs re-triaged)
     outcome: "TriageOutcome | None" = None
 
 

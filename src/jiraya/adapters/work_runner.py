@@ -23,6 +23,13 @@ _PR_LABEL_RE = re.compile(r"PR_URL:\s*(\S+)", re.IGNORECASE)
 _PR_URL_RE = re.compile(
     r"https?://[^\s)\"']+/(?:pull|pulls|merge_requests|pull-requests)/\d+"
 )
+_NEEDS_INPUT_RE = re.compile(r"NEEDS_INPUT:\s*(.+)", re.IGNORECASE)
+
+_SENTINEL = (
+    "If you are blocked and need a decision or information from a human to "
+    "proceed, print exactly one line: NEEDS_INPUT: <your question> and stop "
+    "(do not open a pull request)."
+)
 
 _PROMPT_TEMPLATE = """\
 You are an autonomous software engineer working in the repository checked out in
@@ -41,6 +48,21 @@ Do the following:
 3. Commit with a clear message that references {key}.
 4. Push the branch and open a pull request (use `gh pr create` if available).
 5. On the final line, print exactly: PR_URL: <the pull request URL>
+
+{sentinel}
+"""
+
+_RESUME_TEMPLATE = """\
+You are resuming work on Jira ticket {key} in the repository checked out in the
+current working directory. You previously stopped to ask a human a question.
+
+A human has now answered: {answer}
+
+Continue your work on the existing branch "{branch}" (it is already checked out
+in this workspace), implement the change, commit, push, and open a pull request.
+On the final line, print exactly: PR_URL: <the pull request URL>
+
+{sentinel}
 """
 
 
@@ -56,6 +78,7 @@ class NoopWorkAgentRunner:
         classification: Classification,
         resolution: RepoResolution | None,
         workspace: str,
+        answer: str | None = None,
     ) -> WorkResult:
         self.runs.append((ticket.key, workspace))
         return WorkResult.skipped("Work agent not configured (no-op).")
@@ -87,6 +110,7 @@ class CopilotWorkAgentRunner:
         classification: Classification,
         resolution: RepoResolution | None,
         workspace: str,
+        answer: str | None = None,
     ) -> WorkResult:
         if not workspace or not Path(workspace).is_dir():
             return WorkResult.skipped(
@@ -94,14 +118,20 @@ class CopilotWorkAgentRunner:
             )
         model = self._model or classification.recommended_model or "auto"
         branch = f"jiraya/{ticket.key.lower()}"
-        prompt = _PROMPT_TEMPLATE.format(
-            key=ticket.key,
-            category=classification.category,
-            repo=(resolution.repo.key if resolution and resolution.repo else "unknown"),
-            summary=ticket.summary,
-            description=ticket.description,
-            branch=branch,
-        )
+        if answer:
+            prompt = _RESUME_TEMPLATE.format(
+                key=ticket.key, answer=answer, branch=branch, sentinel=_SENTINEL,
+            )
+        else:
+            prompt = _PROMPT_TEMPLATE.format(
+                key=ticket.key,
+                category=classification.category,
+                repo=(resolution.repo.key if resolution and resolution.repo else "unknown"),
+                summary=ticket.summary,
+                description=ticket.description,
+                branch=branch,
+                sentinel=_SENTINEL,
+            )
         try:
             output = self._runner(prompt, workspace, model)
         except Exception as exc:  # noqa: BLE001 - work is best-effort, never crash triage
@@ -109,6 +139,10 @@ class CopilotWorkAgentRunner:
                 started=False, model=model,
                 summary=f"Work agent failed for {ticket.key}: {exc}",
             )
+        # A blocked agent asks a question instead of opening a PR.
+        question = _extract_question(output)
+        if question:
+            return WorkResult.blocked(question, branch=branch, model=model)
         pr_url = _extract_pr_url(output)
         summary = (
             f"Opened pull request for {ticket.key} (model {model})."
@@ -148,3 +182,8 @@ def _extract_pr_url(output: str) -> str:
             return candidate
     url = _PR_URL_RE.search(output)
     return url.group(0) if url else ""
+
+
+def _extract_question(output: str) -> str:
+    match = _NEEDS_INPUT_RE.search(output)
+    return match.group(1).strip() if match else ""

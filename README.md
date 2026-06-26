@@ -123,6 +123,18 @@ writes, is **disabled in dry-run**. The default runner is a no-op, so the work
 agent never runs unless you opt in. The port is the seam for other runners
 (a different CLI agent, a queue worker, etc.).
 
+### When the agent gets stuck (NEEDS_INPUT)
+
+The work prompt tells the agent: *if you're blocked, print `NEEDS_INPUT:
+<question>` and stop.* When that happens the runner returns a blocked
+`WorkResult` and the harness **escalates the question to the inbox** at the
+`work` stage (the ticket is already In Progress). The inbox entry remembers the
+**branch and workspace**. Press `d`, type your **answer** in the note field, and
+choose *Answer & resume work* — the harness re-invokes the agent on the **same
+branch/workspace** with your answer (it does **not** re-triage). If the agent
+gets stuck again it raises a fresh question; otherwise it finishes and opens the
+PR.
+
 ### Model selection
 
 The classifier model and the work model are configured **separately**:

@@ -177,6 +177,47 @@ async def test_tickets_table_shows_pr_when_work_opens_one(wait_for):
         assert ok
 
 
+async def test_tickets_table_shows_needs_input(wait_for):
+    from jiraya.domain import TicketWorkStarted, WorkResult
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        app._system.bus.publish(TicketWorkStarted(
+            ticket_key="PROJ-101", agent="bug-agent",
+            result=WorkResult.blocked("Which DB?", branch="jiraya/proj-101"),
+        ))
+        tickets = app.query_one("#tickets", DataTable)
+        ok = await wait_for(
+            pilot,
+            lambda: "Needs input" in str(tickets.get_cell("PROJ-101", app._cols["outcome"])),
+        )
+        assert ok
+
+
+async def test_work_question_modal_answer_resumes(wait_for):
+    # A WORK-stage entry's modal answers via the note and resumes work.
+    app = _make_app()
+    async with app.run_test() as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        entry = InboxEntry(
+            id="w1", ticket_key="PROJ-101",
+            reason="Work agent is blocked and needs input: Which DB?",
+            stage=EscalationStage.WORK, agent="bug-agent",
+            workspace="/tmp/ws/PROJ-101", branch="jiraya/proj-101",
+            details=("Which DB?",),
+        )
+        app._inbox_entries[entry.id] = entry
+        app.push_screen(
+            InboxDetailScreen(entry, dry_run=False),
+            lambda result: app._on_detail_result(entry.id, result),
+        )
+        await pilot.pause()
+        # The note label/button reflect the answer-and-resume affordance.
+        assert "Answer & resume work" in str(
+            app.screen.query_one("#rerun", Button).label)
+        assert app.screen.focused is app.screen.query_one("#note", Input)
+
+
 async def test_respond_with_repo_unblocks_repository_stage(wait_for):
     app = _make_app_with_repo_gap()
     async with app.run_test() as pilot:

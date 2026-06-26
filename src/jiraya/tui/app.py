@@ -25,6 +25,7 @@ from ..domain import (
     ActivityLevel,
     ActivityLogged,
     DomainEvent,
+    EscalationStage,
     InboxEntry,
     InboxStatus,
     MetricsUpdated,
@@ -270,11 +271,17 @@ class JirayaApp(App):
             if r is not None and r.opened_pr:
                 self._update(event.ticket_key, "outcome",
                              Text(f"PR {_pr_label(r.pr_url)} ↗", style=f"bold {_C_FEATURE}"))
+            elif r is not None and r.needs_input:
+                self._update(event.ticket_key, "outcome",
+                             Text("Needs input ⌨", style=f"bold {_C_UNKNOWN}"))
         elif isinstance(event, TicketEscalated):
             entry = event.entry
             if entry is not None:
                 # Escalation surfaces to the inbox without changing Jira status.
-                self._update(entry.ticket_key, "outcome", Text("Review ⚠", style=f"bold {_C_UNKNOWN}"))
+                label = ("Needs input ⌨" if entry.stage is EscalationStage.WORK
+                         else "Review ⚠")
+                self._update(entry.ticket_key, "outcome",
+                             Text(label, style=f"bold {_C_UNKNOWN}"))
                 self._add_inbox_row(entry)
         elif isinstance(event, ActivityLogged) and event.activity is not None:
             a = event.activity

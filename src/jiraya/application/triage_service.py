@@ -140,6 +140,7 @@ class TriageService:
         comment_id: str | None = None
         taught = False
         retriaged = False
+        resumed = False
         outcome: TriageOutcome | None = None
 
         if post_comment and note:
@@ -164,21 +165,31 @@ class TriageService:
             rerun = True
 
         if rerun:
-            self._inbox.resolve(
-                entry_id,
-                f"Re-triaged with reviewer note: {note}" if note else "Re-triaged",
-            )
-            ticket = self._source.get(entry.ticket_key)
-            if ticket is not None:
-                self._log("reviewer", entry.ticket_key,
-                          "Re-running triage with reviewer note as a hint.",
-                          level=ActivityLevel.INFO)
-                outcome = self.triage_ticket(ticket, hint=note or None)
-                retriaged = True
+            if entry.stage is EscalationStage.WORK:
+                # Answer the agent's question and resume work on the same branch
+                # and workspace, rather than re-triaging from scratch.
+                self._inbox.resolve(
+                    entry_id,
+                    f"Answered work agent: {note}" if note else "Resumed work",
+                )
+                outcome = self._resume_work(entry, note)
+                resumed = outcome is not None
             else:
-                self._log("reviewer", entry.ticket_key,
-                          "Could not re-run triage: ticket not found.",
-                          level=ActivityLevel.ERROR)
+                self._inbox.resolve(
+                    entry_id,
+                    f"Re-triaged with reviewer note: {note}" if note else "Re-triaged",
+                )
+                ticket = self._source.get(entry.ticket_key)
+                if ticket is not None:
+                    self._log("reviewer", entry.ticket_key,
+                              "Re-running triage with reviewer note as a hint.",
+                              level=ActivityLevel.INFO)
+                    outcome = self.triage_ticket(ticket, hint=note or None)
+                    retriaged = True
+                else:
+                    self._log("reviewer", entry.ticket_key,
+                              "Could not re-run triage: ticket not found.",
+                              level=ActivityLevel.ERROR)
             # Refresh the open-inbox count in any dashboards.
             self._events.publish(MetricsUpdated(metrics=self._metrics.snapshot()))
 
@@ -191,8 +202,62 @@ class TriageService:
             comment_id=comment_id,
             taught=taught,
             retriaged=retriaged,
+            resumed=resumed,
             outcome=outcome,
         )
+
+    def _resume_work(self, entry: InboxEntry, answer: str) -> TriageOutcome | None:
+        """Re-invoke the work agent on the same branch/workspace with an answer."""
+        ticket = self._source.get(entry.ticket_key)
+        if ticket is None:
+            self._log("reviewer", entry.ticket_key,
+                      "Could not resume work: ticket not found.",
+                      level=ActivityLevel.ERROR)
+            return None
+        if self._work_runner is None:
+            self._log("reviewer", entry.ticket_key,
+                      "Could not resume work: no work agent configured.",
+                      level=ActivityLevel.ERROR)
+            return None
+
+        # Recover the context needed to build the resume prompt (no re-triage:
+        # no routing, validation, or status change).
+        classification = self._classifier.classify(ticket)
+        resolution = self._resolver.resolve(ticket, classification)
+        workspace = entry.workspace or self._safe_provision(ticket, resolution)
+        agent = entry.agent or "work-agent"
+
+        self._log(agent, entry.ticket_key,
+                  f"Resuming work on {entry.branch or 'the work branch'} with the answer.",
+                  level=ActivityLevel.INFO)
+        work = self._run_work(ticket, classification, agent, resolution, workspace,
+                              answer=answer)
+        if work is not None and work.needs_input:
+            return self._finish(self._escalate(
+                ticket, classification,
+                reason=f"Work agent is blocked and needs input: {work.question}",
+                agent=agent, stage=EscalationStage.WORK, resolution=resolution,
+                validation_details=(work.question,),
+                workspace=workspace, branch=work.branch, work=work,
+            ))
+        outcome = TriageOutcome(
+            ticket_key=ticket.key,
+            action=TriageAction.TRANSITIONED,
+            classification=classification,
+            agent=agent,
+            resolution=resolution,
+            workspace=workspace,
+            work=work,
+            note=(work.summary if work else "Resumed work."),
+        )
+        return self._finish(outcome)
+
+    def _safe_provision(self, ticket, resolution) -> str:
+        try:
+            return self._provision(ticket, ticket.key, resolution)
+        except WorkspaceProvisionError:
+            return ""
+
 
     def note_poll_cycle(self, at=None) -> None:
         """Record that a polling cycle ran (owned here so metrics stay internal)."""
@@ -359,6 +424,21 @@ class TriageService:
         )
         # The worker agent runs in the provisioned workspace.
         work = self._run_work(ticket, classification, agent, resolution, workspace)
+        if work is not None and work.needs_input:
+            # The agent is blocked: surface its question to the inbox so a human
+            # can answer and resume the same branch/workspace.
+            return self._escalate(
+                ticket,
+                classification,
+                reason=f"Work agent is blocked and needs input: {work.question}",
+                agent=agent,
+                stage=EscalationStage.WORK,
+                resolution=resolution,
+                validation_details=(work.question,),
+                workspace=workspace,
+                branch=work.branch,
+                work=work,
+            )
         return TriageOutcome(
             ticket_key=ticket.key,
             action=TriageAction.TRANSITIONED,
@@ -378,11 +458,14 @@ class TriageService:
         agent: str,
         resolution: RepoResolution | None,
         workspace: str,
+        answer: str | None = None,
     ):
         if self._work_runner is None:
             return None
         try:
-            result = self._work_runner.run(ticket, classification, resolution, workspace)
+            result = self._work_runner.run(
+                ticket, classification, resolution, workspace, answer=answer
+            )
         except Exception as exc:  # noqa: BLE001 - running the agent is best-effort
             self._log(agent, ticket.key, f"Work agent error: {exc}",
                       level=ActivityLevel.ERROR)
@@ -394,6 +477,10 @@ class TriageService:
             self._log(agent, ticket.key,
                       f"Opened pull request: {result.pr_url}",
                       level=ActivityLevel.SUCCESS)
+        elif result.needs_input:
+            self._log(agent, ticket.key,
+                      f"Work agent needs input: {result.question}",
+                      level=ActivityLevel.WARNING)
         elif result.started:
             self._log(agent, ticket.key, result.summary, level=ActivityLevel.INFO)
         return result
@@ -423,6 +510,9 @@ class TriageService:
         validation_details: tuple[str, ...] = (),
         stage: EscalationStage = EscalationStage.CLASSIFICATION,
         resolution: RepoResolution | None = None,
+        workspace: str = "",
+        branch: str = "",
+        work=None,
     ) -> TriageOutcome:
         entry = InboxEntry(
             id=self._id_factory(),
@@ -435,6 +525,8 @@ class TriageService:
             details=tuple(validation_details),
             stage=stage,
             repo=resolution.repo if resolution else None,
+            workspace=workspace,
+            branch=branch,
         )
         self._inbox.add(entry)
         # Per the spec, exceptions are surfaced to the jiraya dashboard for human
@@ -452,6 +544,8 @@ class TriageService:
             classification=classification,
             agent=agent,
             resolution=resolution,
+            workspace=workspace,
+            work=work,
             note=reason,
         )
 

@@ -8,7 +8,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Static
 
-from ..domain import InboxEntry
+from ..domain import EscalationStage, InboxEntry
 
 
 class InboxDetailScreen(ModalScreen[dict | None]):
@@ -47,11 +47,18 @@ class InboxDetailScreen(ModalScreen[dict | None]):
 
     def compose(self) -> ComposeResult:
         e = self._entry
+        is_work = e.stage is EscalationStage.WORK
+        note_label = (
+            "Answer the agent's question (resumes work on the same branch):"
+            if is_work
+            else "Add a note (sent as a Jira comment and/or used as a triage hint):"
+        )
+        rerun_label = "Answer & resume work" if is_work else "Re-run triage"
         with Vertical(id="dialog"):
             yield Static(Text(f"Inbox exception · {e.ticket_key}", style="bold"),
                          classes="heading")
             yield Static(self._detail_text(), id="detail")
-            yield Label("Add a note (sent as a Jira comment and/or used as a triage hint):")
+            yield Label(note_label)
             yield Input(placeholder="e.g. This is actually a bug — repro: …", id="note")
             yield Label("Repo (clone URL) — supply to unblock and teach the resolver:")
             yield Input(
@@ -66,13 +73,14 @@ class InboxDetailScreen(ModalScreen[dict | None]):
                 )
             with Horizontal(id="buttons"):
                 yield Button("Post comment", id="comment", variant="primary")
-                yield Button("Re-run triage", id="rerun", variant="warning")
+                yield Button(rerun_label, id="rerun", variant="warning")
                 yield Button("Comment + Re-run", id="both", variant="success")
                 yield Button("Resolve", id="resolve")
                 yield Button("Cancel", id="cancel")
 
     def on_mount(self) -> None:
-        # Repo-stage exceptions are unblocked by supplying a repo, so focus that.
+        # Repo-stage exceptions are unblocked by supplying a repo; everything
+        # else (incl. work questions) is answered via the note field.
         target = "repo-url" if self._entry.needs_repo else "note"
         self.query_one(f"#{target}", Input).focus()
 
