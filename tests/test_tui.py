@@ -365,3 +365,54 @@ async def test_forget_action_removes_ticket_and_inbox_rows(wait_for):
         assert not any(e.ticket_key == "PROJ-102"
                        for e in app._inbox_entries.values())
         assert "PROJ-102" not in app._system.service.actioned_keys()
+
+
+def _ticket_table_fill(app):
+    """Return (available_width, summed_render_width, columns) for the tickets table."""
+    table = app.query_one("#tickets", DataTable)
+    available = table.content_size.width - table._row_label_column_width
+    if table.show_vertical_scrollbar:
+        available -= table.scrollbar_size_vertical
+    render = sum(c.get_render_width(table) for c in table.ordered_columns)
+    return available, render, table
+
+
+async def test_ticket_columns_fill_available_width(wait_for):
+    app = _make_app()
+    async with app.run_test(size=(160, 30)) as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        await pilot.pause()
+        available, render, table = _ticket_table_fill(app)
+        # Every column was stretched, so the columns consume the whole panel.
+        assert render == available
+        assert not table.show_horizontal_scrollbar
+
+
+async def test_ticket_columns_refit_on_resize(wait_for):
+    app = _make_app()
+    async with app.run_test(size=(160, 30)) as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        await pilot.pause()
+        before_available, before_render, _ = _ticket_table_fill(app)
+        assert before_render == before_available
+
+        await pilot.resize_terminal(210, 30)
+        ok = await wait_for(pilot, lambda: _ticket_table_fill(app)[0] > before_available)
+        assert ok
+        available, render, table = _ticket_table_fill(app)
+        # After growing the terminal the columns re-stretch to the new width.
+        assert render == available
+        assert available > before_available
+        assert not table.show_horizontal_scrollbar
+
+
+async def test_ticket_columns_fall_back_to_content_when_too_narrow(wait_for):
+    app = _make_app()
+    async with app.run_test(size=(70, 30)) as pilot:
+        await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
+        await pilot.pause()
+        available, render, table = _ticket_table_fill(app)
+        # No room to stretch: columns keep their natural (content) widths instead
+        # of being squashed, so the table scrolls rather than truncating.
+        assert render >= available
+        assert all(c.auto_width for c in table.ordered_columns)

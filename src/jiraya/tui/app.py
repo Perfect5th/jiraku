@@ -116,6 +116,20 @@ def _record_outcome_cell(r) -> Text:
     return Text("Review ⚠", style=f"bold {_C_UNKNOWN}")
 
 
+class _TicketsTable(DataTable):
+    """Tickets table that re-stretches its columns whenever it is resized.
+
+    The table's own ``Resize`` is the only signal that fires *after* its region
+    has been re-laid out, so ``content_size`` is already current here (unlike the
+    app-level resize, which runs before children reflow).
+    """
+
+    def on_resize(self, event) -> None:  # noqa: ANN001 - textual events.Resize
+        fit = getattr(self.app, "_fit_ticket_columns", None)
+        if fit is not None:
+            fit()
+
+
 class JirayaApp(App):
     """Real-time triage dashboard."""
 
@@ -195,6 +209,7 @@ class JirayaApp(App):
         self._inbox_entries: dict[str, InboxEntry] = {}
         self._cols: dict[str, object] = {}
         self._inbox_cols: dict[str, object] = {}
+        self._fit_pending = False
 
     # -- layout ---------------------------------------------------------------
 
@@ -202,7 +217,7 @@ class JirayaApp(App):
         yield Header(show_clock=True)
         yield Static(id="metrics")
         with Horizontal(id="body"):
-            yield DataTable(id="tickets", cursor_type="row", zebra_stripes=True)
+            yield _TicketsTable(id="tickets", cursor_type="row", zebra_stripes=True)
             with Vertical(id="side"):
                 yield RichLog(id="activity", markup=True, wrap=True, highlight=False)
                 yield DataTable(id="inbox", cursor_type="row", zebra_stripes=True)
@@ -234,6 +249,7 @@ class JirayaApp(App):
         self._rehydrate()
         self._unsubscribe = self._system.bus.subscribe(self._on_event)
         self.run_worker(self._poll_loop(), name="poller", exclusive=False)
+        self._schedule_fit()
 
     def _rehydrate(self) -> None:
         """Restore previously-actioned tickets + open inbox items from the store."""
@@ -372,6 +388,7 @@ class JirayaApp(App):
             key=key,
         )
         self._ticket_rows.add(key)
+        self._schedule_fit()
 
     def _set_status(self, key: str, status: TicketStatus) -> None:
         self._update(key, "status",
@@ -385,6 +402,53 @@ class JirayaApp(App):
             table.update_cell(row_key, self._cols[column], value)
         except Exception:  # noqa: BLE001 - row may have been removed
             pass
+        self._schedule_fit()
+
+    def _schedule_fit(self) -> None:
+        """Coalesce column re-fitting to once per refresh cycle."""
+        if self._fit_pending:
+            return
+        self._fit_pending = True
+        self.call_after_refresh(self._fit_ticket_columns)
+
+    def _fit_ticket_columns(self) -> None:
+        """Grow the Tickets columns so they fill all available horizontal space.
+
+        Textual's DataTable sizes each column to its content, leaving the panel
+        looking cramped with empty space on the right. There is no built-in
+        "flex" for columns, so we distribute the leftover width across them by
+        pinning each column's width (``content_width`` plus an even share of the
+        slack). When the natural content is already wider than the panel we fall
+        back to content sizing so the table can scroll instead of truncating.
+        """
+        self._fit_pending = False
+        try:
+            table = self.query_one("#tickets", DataTable)
+        except Exception:  # noqa: BLE001 - not mounted yet / torn down
+            return
+        columns = table.ordered_columns
+        if not columns:
+            return
+        available = table.content_size.width - table._row_label_column_width
+        if table.show_vertical_scrollbar:
+            available -= table.scrollbar_size_vertical
+        if available <= 0:  # not laid out yet; a later pass will fit it
+            return
+        padding = 2 * table.cell_padding
+        natural = [c.content_width for c in columns]
+        natural_total = sum(width + padding for width in natural)
+        if available <= natural_total:
+            # No room to stretch — let the table size to content (and scroll).
+            if any(not c.auto_width for c in columns):
+                for column in columns:
+                    column.auto_width = True
+                table._update_dimensions([])
+            return
+        base, extra = divmod(available - natural_total, len(columns))
+        for index, column in enumerate(columns):
+            column.width = natural[index] + base + (1 if index < extra else 0)
+            column.auto_width = False
+        table._update_dimensions([])
 
     def _add_inbox_row(self, entry) -> None:
         self._inbox_entries[entry.id] = entry
@@ -537,6 +601,7 @@ class JirayaApp(App):
         self._workspaces.pop(ticket_key, None)
         self._discard_worker(ticket_key)
         self._render_metrics(self._system.service.metrics.snapshot())
+        self._schedule_fit()
 
     def action_resolve(self) -> None:
         entry_id = self._selected_inbox_id()
