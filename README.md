@@ -7,6 +7,13 @@ agents, and either transitions them to **In Progress** or surfaces them to a
 
 This repository contains the **triage agent harness** and the **TUI dashboard**.
 
+![The jiraya TUI dashboard: a Tickets table on the left, a live Agent activity
+log and an exceptions Inbox on the right.](examples/screenshot.png)
+
+The dashboard shows tickets being classified, routed to worker agents and either
+transitioned to **In Progress** or surfaced to the **Inbox** for human review,
+with a live activity log and running metrics across the top.
+
 ## Architecture
 
 jiraya uses a **hexagonal (ports & adapters)** architecture so the business
