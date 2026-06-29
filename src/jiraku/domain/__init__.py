@@ -1,4 +1,4 @@
-"""jiraya domain layer — pure business model, no external dependencies."""
+"""jiraku domain layer — pure business model, no external dependencies."""
 
 from __future__ import annotations
 

@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jiraya.adapters.agents import default_agents
-from jiraya.adapters.classifier import KeywordClassifier
-from jiraya.adapters.inmemory import (
+from jiraku.adapters.agents import default_agents
+from jiraku.adapters.classifier import KeywordClassifier
+from jiraku.adapters.inmemory import (
     InMemoryEventBus,
     InMemoryInboxRepository,
     InMemoryTicketSource,
 )
-from jiraya.adapters.resolver import RegistryRepoResolver, default_catalog
-from jiraya.adapters.work_runner import CopilotWorkAgentRunner, NoopWorkAgentRunner
-from jiraya.application import AgentRouter, TriageService
-from jiraya.domain import Classification, EscalationStage, Priority, Ticket, TicketCategory, TriageAction
-from jiraya.ports import WorkspaceProvisionError
+from jiraku.adapters.resolver import RegistryRepoResolver, default_catalog
+from jiraku.adapters.work_runner import CopilotWorkAgentRunner, NoopWorkAgentRunner
+from jiraku.application import AgentRouter, TriageService
+from jiraku.domain import Classification, EscalationStage, Priority, Ticket, TicketCategory, TriageAction
+from jiraku.ports import WorkspaceProvisionError
 
 
 class _Provisioner:
@@ -57,7 +57,7 @@ def test_runner_followup_prompt_includes_instruction(tmp_path):
     )
     assert out.opened_pr
     assert "Rename the flag and add a test" in seen["prompt"]
-    assert "jiraya/proj-1" in seen["prompt"]
+    assert "jiraku/proj-1" in seen["prompt"]
     assert "further on-demand work" in seen["prompt"]
 
 
@@ -122,7 +122,7 @@ def test_run_followup_clone_failure_escalates_provisioning(tmp_path):
 # -- CLI ---------------------------------------------------------------------
 
 def test_cli_work_command_runs(monkeypatch):
-    from jiraya import cli
+    from jiraku import cli
     for key in ("JIRA_BASE", "JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"):
         monkeypatch.delenv(key, raising=False)
     rc = cli.main(["work", "PROJ-101", "add a unit test", "--source", "memory"])

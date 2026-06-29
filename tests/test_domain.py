@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from jiraya.domain import (
+from jiraku.domain import (
     Classification,
     InboxEntry,
     InboxStatus,

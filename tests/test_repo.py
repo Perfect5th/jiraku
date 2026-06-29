@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from jiraya.adapters.resolver import (
+from jiraku.adapters.resolver import (
     CompositeRepoResolver,
     FileLearnedRulesStore,
     InMemoryLearnedRulesStore,
@@ -15,9 +15,9 @@ from jiraya.adapters.resolver import (
     default_catalog,
     load_catalog,
 )
-from jiraya.adapters.workspace import GitWorkspaceProvisioner, NoopWorkspaceProvisioner
-from jiraya.composition import JirayaConfig, build_system
-from jiraya.domain import (
+from jiraku.adapters.workspace import GitWorkspaceProvisioner, NoopWorkspaceProvisioner
+from jiraku.composition import JirakuConfig, build_system
+from jiraku.domain import (
     Classification,
     EscalationStage,
     Priority,
@@ -190,7 +190,7 @@ def test_git_provisioner_runs_clone(tmp_path):
 # -- harness integration -----------------------------------------------------
 
 def test_harness_escalates_at_repository_stage():
-    system = build_system(JirayaConfig(source="memory"))
+    system = build_system(JirakuConfig(source="memory"))
     # API is classifiable (Bug) but absent from the default registry.
     system.source.add(Ticket(
         key="API-9", project="API", summary="Timeout on the orders endpoint",
@@ -204,7 +204,7 @@ def test_harness_escalates_at_repository_stage():
 
 
 def test_respond_with_repo_teaches_and_unblocks():
-    system = build_system(JirayaConfig(source="memory"))
+    system = build_system(JirakuConfig(source="memory"))
     system.source.add(Ticket(
         key="API-10", project="API", summary="Timeout on the orders endpoint",
         description="Steps: POST /v2/orders; expected 200; actual 504. Stack trace attached.",
@@ -231,7 +231,7 @@ def test_respond_with_repo_teaches_and_unblocks():
 
 
 def test_require_repo_false_skips_gate():
-    system = build_system(JirayaConfig(source="memory", require_repo=False))
+    system = build_system(JirakuConfig(source="memory", require_repo=False))
     system.source.add(Ticket(
         key="API-11", project="API", summary="Timeout on the orders endpoint",
         description="Steps: POST /v2/orders; expected 200; actual 504. Stack trace attached.",
@@ -246,7 +246,7 @@ def test_require_repo_false_skips_gate():
 
 
 def test_transitioned_ticket_gets_workspace():
-    system = build_system(JirayaConfig(source="memory"))
+    system = build_system(JirakuConfig(source="memory"))
     outcomes = asyncio.run(system.poller.run_once())
     transitioned = [o for o in outcomes if o.action is TriageAction.TRANSITIONED]
     assert transitioned

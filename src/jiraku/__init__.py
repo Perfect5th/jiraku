@@ -1,4 +1,4 @@
-"""jiraya — agent-powered Jira triage agent with a TUI dashboard.
+"""jiraku — agent-powered Jira triage agent with a TUI dashboard.
 
 Implemented with a hexagonal architecture:
 
@@ -14,6 +14,6 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
-from .composition import JiraConfig, JirayaConfig, JirayaSystem, build_system
+from .composition import JiraConfig, JirakuConfig, JirakuSystem, build_system
 
-__all__ = ["__version__", "JiraConfig", "JirayaConfig", "JirayaSystem", "build_system"]
+__all__ = ["__version__", "JiraConfig", "JirakuConfig", "JirakuSystem", "build_system"]

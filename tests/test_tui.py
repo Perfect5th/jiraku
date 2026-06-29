@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from textual.widgets import Button, DataTable, Input, RichLog, Static
 
-from jiraya.composition import JirayaConfig
-from jiraya.domain import (
+from jiraku.composition import JirakuConfig
+from jiraku.domain import (
     EscalationStage,
     InboxEntry,
     InboxStatus,
@@ -12,15 +12,15 @@ from jiraya.domain import (
     Ticket,
     TicketEscalated,
 )
-from jiraya.tui import JirayaApp
-from jiraya.tui.detail import InboxDetailScreen
-from jiraya.tui.confirm import ConfirmScreen
+from jiraku.tui import JirakuApp
+from jiraku.tui.detail import InboxDetailScreen
+from jiraku.tui.confirm import ConfirmScreen
 
 
-def _make_app() -> JirayaApp:
+def _make_app() -> JirakuApp:
     # Large interval so the dashboard runs exactly one automatic cycle; further
     # cycles are triggered explicitly via key bindings in the tests.
-    return JirayaApp(config=JirayaConfig(), poll_interval=10_000)
+    return JirakuApp(config=JirakuConfig(), poll_interval=10_000)
 
 
 async def test_dashboard_populates_after_first_cycle(wait_for):
@@ -140,8 +140,8 @@ async def test_detail_modal_shows_clone_command_for_provisioning_entry(wait_for)
         assert app.screen.focused is app.screen.query_one("#repo-url", Input)
 
 
-def _make_app_with_repo_gap() -> JirayaApp:
-    app = JirayaApp(config=JirayaConfig(source="memory"), poll_interval=10_000)
+def _make_app_with_repo_gap() -> JirakuApp:
+    app = JirakuApp(config=JirakuConfig(source="memory"), poll_interval=10_000)
     # Inject an uncovered-project ticket so a repository-stage exception appears.
     app._system.source.add(Ticket(
         key="API-77", project="API", summary="Timeout on the orders endpoint",
@@ -162,7 +162,7 @@ async def test_tickets_table_shows_resolved_repo(wait_for):
 
 
 async def test_tickets_table_shows_pr_when_work_opens_one(wait_for):
-    from jiraya.domain import TicketWorkStarted, WorkResult
+    from jiraku.domain import TicketWorkStarted, WorkResult
     app = _make_app()
     async with app.run_test() as pilot:
         await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
@@ -180,13 +180,13 @@ async def test_tickets_table_shows_pr_when_work_opens_one(wait_for):
 
 
 async def test_tickets_table_shows_needs_input(wait_for):
-    from jiraya.domain import TicketWorkStarted, WorkResult
+    from jiraku.domain import TicketWorkStarted, WorkResult
     app = _make_app()
     async with app.run_test() as pilot:
         await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
         app._system.bus.publish(TicketWorkStarted(
             ticket_key="PROJ-101", agent="bug-agent",
-            result=WorkResult.blocked("Which DB?", branch="jiraya/proj-101"),
+            result=WorkResult.blocked("Which DB?", branch="jiraku/proj-101"),
         ))
         tickets = app.query_one("#tickets", DataTable)
         ok = await wait_for(
@@ -197,7 +197,7 @@ async def test_tickets_table_shows_needs_input(wait_for):
 
 
 async def test_activity_header_shows_active_worker_count(wait_for):
-    from jiraya.domain import TicketWorkStarted, WorkResult
+    from jiraku.domain import TicketWorkStarted, WorkResult
     app = _make_app()
     async with app.run_test() as pilot:
         await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
@@ -220,17 +220,17 @@ async def test_activity_header_shows_active_worker_count(wait_for):
 
 
 async def test_dashboard_rehydrates_actioned_tickets_from_state(wait_for, tmp_path):
-    from jiraya.composition import build_system
+    from jiraku.composition import build_system
     db = str(tmp_path / "state.db")
     # Populate the store with a full triage cycle, then close it.
-    seed = build_system(JirayaConfig(source="memory", state_db_path=db))
+    seed = build_system(JirakuConfig(source="memory", state_db_path=db))
     await seed.poller.run_once()
     seed.inbox.close()
 
     # A fresh dashboard on the same DB restores the actioned tickets + inbox
     # on mount, before any polling.
-    app = JirayaApp(
-        system=build_system(JirayaConfig(source="memory", state_db_path=db)),
+    app = JirakuApp(
+        system=build_system(JirakuConfig(source="memory", state_db_path=db)),
         poll_interval=10_000)
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -251,7 +251,7 @@ async def test_work_question_modal_answer_resumes(wait_for):
             id="w1", ticket_key="PROJ-101",
             reason="Work agent is blocked and needs input: Which DB?",
             stage=EscalationStage.WORK, agent="bug-agent",
-            workspace="/tmp/ws/PROJ-101", branch="jiraya/proj-101",
+            workspace="/tmp/ws/PROJ-101", branch="jiraku/proj-101",
             details=("Which DB?",),
         )
         app._inbox_entries[entry.id] = entry
@@ -267,7 +267,7 @@ async def test_work_question_modal_answer_resumes(wait_for):
 
 
 async def test_followup_modal_runs_agent_in_workspace(wait_for):
-    from jiraya.tui.followup import FollowupScreen
+    from jiraku.tui.followup import FollowupScreen
     app = _make_app()
     async with app.run_test() as pilot:
         await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
@@ -287,7 +287,7 @@ async def test_followup_modal_runs_agent_in_workspace(wait_for):
 
 
 async def test_followup_requires_provisioned_workspace(wait_for):
-    from jiraya.tui.followup import FollowupScreen
+    from jiraku.tui.followup import FollowupScreen
     app = _make_app()
     async with app.run_test() as pilot:
         await wait_for(pilot, lambda: app._system.service.metrics.processed == 8)
@@ -327,7 +327,7 @@ async def test_respond_with_repo_unblocks_repository_stage(wait_for):
         )
         assert ok
         # The repo mapping was learned: a new API ticket now resolves.
-        from jiraya.domain import Classification, TicketCategory
+        from jiraku.domain import Classification, TicketCategory
         res = app._system.resolver.resolve(
             app._system.source.get("API-77"),
             Classification(TicketCategory.BUG, "API", 0.9),

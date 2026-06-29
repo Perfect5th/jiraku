@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from jiraya.adapters.classifier import CopilotCliClassifier, KeywordClassifier, recommend_model
-from jiraya.adapters.classifier.recommend import (
+from jiraku.adapters.classifier import CopilotCliClassifier, KeywordClassifier, recommend_model
+from jiraku.adapters.classifier.recommend import (
     AUTO_MODEL,
     DEEP_MODEL,
     FAST_MODEL,
     STANDARD_MODEL,
 )
-from jiraya.domain import Priority, Ticket, TicketCategory
+from jiraku.domain import Priority, Ticket, TicketCategory
 
 
 def _ticket(summary="Add export", description="please add CSV export", issue_type="", labels=()):

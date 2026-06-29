@@ -1,4 +1,4 @@
-"""Enable ``python -m jiraya``."""
+"""Enable ``python -m jiraku``."""
 
 from __future__ import annotations
 

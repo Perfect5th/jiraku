@@ -1,11 +1,11 @@
-"""The jiraya TUI dashboard.
+"""The jiraku TUI dashboard.
 
 A Textual app that drives the triage poller in the background and renders, in
 real time, the ticket pipeline, the agent activity feed, live metrics and the
 exception inbox surfaced for human review.
 
 The app is a *driving adapter*: it talks to the core only through the event bus
-(subscribe) and the assembled :class:`~jiraya.composition.JirayaSystem`. Domain
+(subscribe) and the assembled :class:`~jiraku.composition.JirakuSystem`. Domain
 events arrive from poller worker threads and are marshalled onto the UI event
 loop with ``call_soon_threadsafe`` before any widget is touched.
 """
@@ -20,7 +20,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Footer, Header, RichLog, Static
 
-from ..composition import JirayaConfig, JirayaSystem, build_system
+from ..composition import JirakuConfig, JirakuSystem, build_system
 from ..domain import (
     ActivityLevel,
     ActivityLogged,
@@ -130,10 +130,10 @@ class _TicketsTable(DataTable):
             fit()
 
 
-class JirayaApp(App):
+class JirakuApp(App):
     """Real-time triage dashboard."""
 
-    TITLE = "jiraya"
+    TITLE = "jiraku"
     SUB_TITLE = "agent-powered Jira triage"
 
     CSS = """
@@ -192,13 +192,13 @@ class JirayaApp(App):
 
     def __init__(
         self,
-        system: JirayaSystem | None = None,
+        system: JirakuSystem | None = None,
         *,
-        config: JirayaConfig | None = None,
+        config: JirakuConfig | None = None,
         poll_interval: float = 20.0,
     ) -> None:
         super().__init__()
-        self._system = system or build_system(config or JirayaConfig())
+        self._system = system or build_system(config or JirakuConfig())
         self.interval = poll_interval
         self._loop: asyncio.AbstractEventLoop | None = None
         self._poke = asyncio.Event()
@@ -244,7 +244,7 @@ class JirayaApp(App):
         if self._system.dry_run:
             mode += " (dry-run: no writes)"
         self.sub_title = f"triage · {mode}"
-        self._log_line(f"jiraya dashboard started — source: {mode}.", ActivityLevel.INFO)
+        self._log_line(f"jiraku dashboard started — source: {mode}.", ActivityLevel.INFO)
 
         self._rehydrate()
         self._unsubscribe = self._system.bus.subscribe(self._on_event)
@@ -725,6 +725,6 @@ class JirayaApp(App):
         self._render_metrics(self._system.service.metrics.snapshot())
 
 
-def run(config: JirayaConfig | None = None, *, poll_interval: float = 20.0) -> None:
+def run(config: JirakuConfig | None = None, *, poll_interval: float = 20.0) -> None:
     """Launch the dashboard (blocking)."""
-    JirayaApp(config=config, poll_interval=poll_interval).run()
+    JirakuApp(config=config, poll_interval=poll_interval).run()

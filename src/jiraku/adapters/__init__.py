@@ -1,4 +1,4 @@
-"""jiraya adapters — concrete implementations of the ports."""
+"""jiraku adapters — concrete implementations of the ports."""
 
 from __future__ import annotations
 

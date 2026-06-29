@@ -4,12 +4,12 @@ import asyncio
 
 import pytest
 
-from jiraya.composition import JirayaConfig, build_system
-from jiraya.domain import InboxStatus, TicketCategory
+from jiraku.composition import JirakuConfig, build_system
+from jiraku.domain import InboxStatus, TicketCategory
 
 
 def _system_with_inbox():
-    system = build_system(JirayaConfig(source="memory"))
+    system = build_system(JirakuConfig(source="memory"))
     asyncio.run(system.poller.run_once())
     return system
 
@@ -86,15 +86,15 @@ def test_respond_unknown_entry_raises():
 
 def test_respond_dry_run_suppresses_comment(monkeypatch):
     # A dry-run Jira system must not post comments even when asked to.
-    from jiraya.composition import JiraConfig
+    from jiraku.composition import JiraConfig
 
-    cfg = JirayaConfig(
+    cfg = JirakuConfig(
         source="jira", dry_run=True,
         jira=JiraConfig(base_url="https://x.atlassian.net", email="e", api_token="t"),
     )
     system = build_system(cfg)
     # Inject an inbox entry directly (no network needed).
-    from jiraya.domain import InboxEntry
+    from jiraku.domain import InboxEntry
     system.inbox.add(InboxEntry(id="z1", ticket_key="PROJ-1", reason="why",
                                 category=TicketCategory.BUG))
 

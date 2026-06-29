@@ -4,7 +4,7 @@ Used for ``--dry-run``: reads (``fetch_untriaged`` / ``get``) pass straight
 through to the wrapped source, but writes (``transition`` and ``add_comment``)
 are intercepted — they never reach the underlying API. Instead the wrapper
 returns what it *would* have produced and notifies optional observers so the
-intended change can be logged. This lets jiraya be pointed at a real, live Jira
+intended change can be logged. This lets jiraku be pointed at a real, live Jira
 to prove that real items flow through triage, without ever altering the board.
 """
 

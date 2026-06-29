@@ -3,7 +3,7 @@
 The catalog is the data the registry resolver matches against. In production it
 is best seeded from Jira **dev-status / commit-mining** (the issue→commit→repo
 links Jira already records), then hand-curated; here it is loaded from a YAML
-file (see ``jiraya/data/repo_registry.yaml``) or supplied programmatically.
+file (see ``jiraku/data/repo_registry.yaml``) or supplied programmatically.
 """
 
 from __future__ import annotations

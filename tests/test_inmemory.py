@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from jiraya.adapters.inmemory import (
+from jiraku.adapters.inmemory import (
     InMemoryEventBus,
     InMemoryInboxRepository,
     InMemoryTicketSource,
     random_ticket,
     sample_tickets,
 )
-from jiraya.domain import InboxEntry, Ticket, TicketStatus
+from jiraku.domain import InboxEntry, Ticket, TicketStatus
 
 
 def test_ticket_source_filters_triageable():

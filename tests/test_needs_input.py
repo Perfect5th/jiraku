@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from jiraya.adapters.agents import default_agents
-from jiraya.adapters.classifier import KeywordClassifier
-from jiraya.adapters.inmemory import (
+from jiraku.adapters.agents import default_agents
+from jiraku.adapters.classifier import KeywordClassifier
+from jiraku.adapters.inmemory import (
     InMemoryEventBus,
     InMemoryInboxRepository,
     InMemoryTicketSource,
 )
-from jiraya.adapters.resolver import RegistryRepoResolver, default_catalog
-from jiraya.adapters.work_runner import CopilotWorkAgentRunner, _extract_question
-from jiraya.application import AgentRouter, TriageService
-from jiraya.domain import (
+from jiraku.adapters.resolver import RegistryRepoResolver, default_catalog
+from jiraku.adapters.work_runner import CopilotWorkAgentRunner, _extract_question
+from jiraku.application import AgentRouter, TriageService
+from jiraku.domain import (
     Classification,
     EscalationStage,
     Priority,
@@ -37,7 +37,7 @@ def _ticket():
 # -- domain ------------------------------------------------------------------
 
 def test_work_result_needs_input():
-    r = WorkResult.blocked("Which DB?", branch="jiraya/proj-1", model="m")
+    r = WorkResult.blocked("Which DB?", branch="jiraku/proj-1", model="m")
     assert r.needs_input
     assert not r.started
     assert r.question == "Which DB?"
@@ -60,7 +60,7 @@ def test_runner_parses_needs_input(tmp_path):
     ).run(_ticket(), _cls(), None, str(ws))
     assert out.needs_input
     assert out.question == "Which queue backend?"
-    assert out.branch == "jiraya/proj-1"
+    assert out.branch == "jiraku/proj-1"
 
 
 def test_runner_resume_prompt_includes_answer(tmp_path):
@@ -77,7 +77,7 @@ def test_runner_resume_prompt_includes_answer(tmp_path):
     )
     assert out.opened_pr
     assert "Use Redis" in seen["prompt"]
-    assert "jiraya/proj-1" in seen["prompt"]
+    assert "jiraku/proj-1" in seen["prompt"]
     assert "NEEDS_INPUT" in seen["prompt"]  # sentinel still present on resume
 
 
@@ -122,7 +122,7 @@ def test_blocked_work_escalates_at_work_stage(tmp_path):
     entry = next(e for e in svc._inbox.open_entries() if e.ticket_key == "PROJ-101")
     assert entry.stage is EscalationStage.WORK
     assert "Which database" in entry.reason
-    assert entry.branch == "jiraya/proj-101"
+    assert entry.branch == "jiraku/proj-101"
     assert entry.workspace.endswith("PROJ-101")
     # The work attempt and the escalation were both published.
     assert any(isinstance(e, TicketWorkStarted) and e.result.needs_input for e in events)

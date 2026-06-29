@@ -1,4 +1,4 @@
-"""The expandable inbox detail + "respond" modal for the jiraya dashboard."""
+"""The expandable inbox detail + "respond" modal for the jiraku dashboard."""
 
 from __future__ import annotations
 

@@ -3,11 +3,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 
-from jiraya.adapters.inmemory import InMemoryTriageLedger
-from jiraya.adapters.sqlite import SqliteStateStore
-from jiraya.cli import _resolve_state_db
-from jiraya.composition import JirayaConfig, build_system
-from jiraya.domain import (
+from jiraku.adapters.inmemory import InMemoryTriageLedger
+from jiraku.adapters.sqlite import SqliteStateStore
+from jiraku.cli import _resolve_state_db
+from jiraku.composition import JirakuConfig, build_system
+from jiraku.domain import (
     Classification,
     EscalationStage,
     InboxEntry,
@@ -57,7 +57,7 @@ def test_sqlite_inbox_round_trip(tmp_path):
         category=TicketCategory.BUG, confidence=0.3, agent="bug-agent",
         details=("$ git clone x", "fatal"), stage=EscalationStage.PROVISIONING,
         repo=RepoRef("acme/x", "https://x/x.git"), workspace="/tmp/ws/PROJ-9",
-        branch="jiraya/proj-9")
+        branch="jiraku/proj-9")
     store.add(entry)
     store.close()
 
@@ -66,7 +66,7 @@ def test_sqlite_inbox_round_trip(tmp_path):
     assert got is not None
     assert got.stage is EscalationStage.PROVISIONING
     assert got.repo.key == "acme/x"
-    assert got.branch == "jiraya/proj-9"
+    assert got.branch == "jiraku/proj-9"
     assert got.details == ("$ git clone x", "fatal")
     assert len(reopened.open_entries()) == 1
     reopened.resolve("e1", "done")
@@ -98,7 +98,7 @@ def test_sqlite_ledger_round_trip(tmp_path):
 # -- composition wiring ------------------------------------------------------
 
 def test_state_db_uses_sqlite_for_inbox_and_ledger(tmp_path):
-    system = build_system(JirayaConfig(source="memory",
+    system = build_system(JirakuConfig(source="memory",
                                        state_db_path=str(tmp_path / "s.db")))
     assert isinstance(system.inbox, SqliteStateStore)
     assert system.ledger is system.inbox  # one store backs both
@@ -106,8 +106,8 @@ def test_state_db_uses_sqlite_for_inbox_and_ledger(tmp_path):
 
 
 def test_no_state_db_uses_in_memory():
-    from jiraya.adapters.inmemory import InMemoryInboxRepository
-    system = build_system(JirayaConfig(source="memory"))
+    from jiraku.adapters.inmemory import InMemoryInboxRepository
+    system = build_system(JirakuConfig(source="memory"))
     assert isinstance(system.inbox, InMemoryInboxRepository)
     assert isinstance(system.ledger, InMemoryTriageLedger)
 
@@ -116,7 +116,7 @@ def test_no_state_db_uses_in_memory():
 
 def test_actioned_tickets_persist_and_dedup_across_restart(tmp_path):
     db = str(tmp_path / "state.db")
-    s1 = build_system(JirayaConfig(source="memory", state_db_path=db))
+    s1 = build_system(JirakuConfig(source="memory", state_db_path=db))
     asyncio.run(s1.poller.run_once())
     assert s1.service.metrics.processed == 8
     assert len(s1.inbox.open_entries()) == 4
@@ -124,7 +124,7 @@ def test_actioned_tickets_persist_and_dedup_across_restart(tmp_path):
     s1.inbox.close()
 
     # Restart: a fresh system on the same DB restores everything.
-    s2 = build_system(JirayaConfig(source="memory", state_db_path=db))
+    s2 = build_system(JirakuConfig(source="memory", state_db_path=db))
     assert s2.service.metrics.processed == 8          # metrics restored
     assert s2.service.metrics.escalated == 4
     assert len(s2.inbox.open_entries()) == 4          # inbox restored

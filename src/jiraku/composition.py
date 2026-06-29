@@ -2,7 +2,7 @@
 
 Everything above this module depends only on ports; this module is allowed to
 know about concrete classes. Driving adapters (CLI, TUI) ask :func:`build_system`
-for a fully assembled :class:`JirayaSystem` and stay ignorant of the wiring.
+for a fully assembled :class:`JirakuSystem` and stay ignorant of the wiring.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ class JiraConfig:
 
 
 @dataclass(slots=True)
-class JirayaConfig:
+class JirakuConfig:
     """User-facing configuration for assembling the system."""
 
     classifier: str = "keyword"      # "keyword" | "copilot" | "gemini"
@@ -113,8 +113,8 @@ class JirayaConfig:
 
 
 @dataclass(slots=True)
-class JirayaSystem:
-    """A fully assembled, ready-to-run jiraya instance."""
+class JirakuSystem:
+    """A fully assembled, ready-to-run jiraku instance."""
 
     bus: EventBus
     source: TicketSource
@@ -131,7 +131,7 @@ class JirayaSystem:
     dry_run: bool = False
 
 
-def build_classifier(config: JirayaConfig) -> Classifier:
+def build_classifier(config: JirakuConfig) -> Classifier:
     if config.classifier in ("copilot", "gemini"):
         fallback = KeywordClassifier() if config.copilot_fallback_to_keyword else None
         cls = CopilotCliClassifier if config.classifier == "copilot" else GeminiCliClassifier
@@ -141,14 +141,14 @@ def build_classifier(config: JirayaConfig) -> Classifier:
     raise ValueError(f"Unknown classifier: {config.classifier!r}")
 
 
-def build_learned_store(config: JirayaConfig) -> LearnedRulesStore:
+def build_learned_store(config: JirakuConfig) -> LearnedRulesStore:
     if config.learned_rules_path:
         return FileLearnedRulesStore(config.learned_rules_path)
     return InMemoryLearnedRulesStore()
 
 
 def build_resolver(
-    config: JirayaConfig, learned_store: LearnedRulesStore
+    config: JirakuConfig, learned_store: LearnedRulesStore
 ) -> RepoResolver:
     catalog = (
         load_catalog(config.repo_registry_path)
@@ -164,7 +164,7 @@ def build_resolver(
     ])
 
 
-def build_provisioner(config: JirayaConfig, *, dry_run: bool) -> WorkspaceProvisioner:
+def build_provisioner(config: JirakuConfig, *, dry_run: bool) -> WorkspaceProvisioner:
     # Running the work agent needs a real checkout, so --work implies cloning.
     wants_clone = config.provision or config.work
     if wants_clone and not dry_run:
@@ -172,7 +172,7 @@ def build_provisioner(config: JirayaConfig, *, dry_run: bool) -> WorkspaceProvis
     return NoopWorkspaceProvisioner()
 
 
-def build_work_runner(config: JirayaConfig, *, dry_run: bool) -> WorkAgentRunner:
+def build_work_runner(config: JirakuConfig, *, dry_run: bool) -> WorkAgentRunner:
     if config.work and not dry_run:
         # No explicit work model falls back to the per-ticket recommendation.
         if config.work_agent == "gemini":
@@ -183,7 +183,7 @@ def build_work_runner(config: JirayaConfig, *, dry_run: bool) -> WorkAgentRunner
     return NoopWorkAgentRunner()
 
 
-def build_source(config: JirayaConfig) -> TicketSource:
+def build_source(config: JirakuConfig) -> TicketSource:
     mode = config.resolve_source()
     if mode == "memory":
         return InMemoryTicketSource()
@@ -203,9 +203,9 @@ def build_source(config: JirayaConfig) -> TicketSource:
     raise ValueError(f"Unknown source: {config.source!r}")
 
 
-def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
+def build_system(config: JirakuConfig | None = None) -> JirakuSystem:
     """Assemble every component for the given configuration."""
-    config = config or JirayaConfig()
+    config = config or JirakuConfig()
     mode = config.resolve_source()
 
     bus = InMemoryEventBus()
@@ -256,7 +256,7 @@ def build_system(config: JirayaConfig | None = None) -> JirayaSystem:
         interval_seconds=config.interval_seconds,
         inbox=inbox,
     )
-    return JirayaSystem(
+    return JirakuSystem(
         bus=bus,
         source=source,
         inbox=inbox,

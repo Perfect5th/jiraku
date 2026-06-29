@@ -1,6 +1,6 @@
 """A deterministic, dependency-free intent classifier.
 
-Used as jiraya's default classifier so the harness runs fully offline and so
+Used as jiraku's default classifier so the harness runs fully offline and so
 tests are reproducible. The Copilot CLI classifier (``copilot_classifier``) is
 the production drop-in that implements the same port.
 """

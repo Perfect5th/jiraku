@@ -1,4 +1,4 @@
-"""jiraya ports — abstract boundaries between the core and the outside world."""
+"""jiraku ports — abstract boundaries between the core and the outside world."""
 
 from __future__ import annotations
 

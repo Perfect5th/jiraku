@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 
-from jiraya.adapters.inmemory import (
+from jiraku.adapters.inmemory import (
     InMemoryInboxRepository,
     InMemoryTriageLedger,
 )
-from jiraya.adapters.sqlite import SqliteStateStore
-from jiraya.composition import JirayaConfig, build_system
-from jiraya.domain import (
+from jiraku.adapters.sqlite import SqliteStateStore
+from jiraku.composition import JirakuConfig, build_system
+from jiraku.domain import (
     Classification,
     EscalationStage,
     InboxEntry,
@@ -79,7 +79,7 @@ def test_sqlite_delete_for_ticket_and_forget_persist(tmp_path):
 
 def test_forget_ticket_removes_and_allows_retriage(tmp_path):
     db = str(tmp_path / "state.db")
-    system = build_system(JirayaConfig(source="memory", state_db_path=db))
+    system = build_system(JirakuConfig(source="memory", state_db_path=db))
     events: list = []
     system.bus.subscribe(events.append)
 
@@ -109,7 +109,7 @@ def test_forget_ticket_removes_and_allows_retriage(tmp_path):
 
 
 def test_forget_unknown_ticket_is_noop():
-    system = build_system(JirayaConfig(source="memory"))
+    system = build_system(JirakuConfig(source="memory"))
     events: list = []
     system.bus.subscribe(events.append)
     assert system.service.forget_ticket("NOPE-1") is False
@@ -118,12 +118,12 @@ def test_forget_unknown_ticket_is_noop():
 
 def test_forget_persists_across_restart(tmp_path):
     db = str(tmp_path / "state.db")
-    s1 = build_system(JirayaConfig(source="memory", state_db_path=db))
+    s1 = build_system(JirakuConfig(source="memory", state_db_path=db))
     asyncio.run(s1.poller.run_once())
     assert s1.service.forget_ticket("WEB-201") is True
     s1.inbox.close()
 
-    s2 = build_system(JirayaConfig(source="memory", state_db_path=db))
+    s2 = build_system(JirakuConfig(source="memory", state_db_path=db))
     assert "WEB-201" not in s2.service.actioned_keys()
     assert not any(e.ticket_key == "WEB-201" for e in s2.inbox.open_entries())
     assert s2.service.metrics.processed == 7  # restored without the forgotten one
@@ -133,10 +133,10 @@ def test_forget_persists_across_restart(tmp_path):
 # -- CLI ---------------------------------------------------------------------
 
 def test_cli_forget_removes_actioned_ticket(tmp_path, capsys):
-    from jiraya.cli import main
+    from jiraku.cli import main
 
     db = str(tmp_path / "state.db")
-    seed = build_system(JirayaConfig(source="memory", state_db_path=db))
+    seed = build_system(JirakuConfig(source="memory", state_db_path=db))
     asyncio.run(seed.poller.run_once())
     seed.inbox.close()
 
@@ -145,13 +145,13 @@ def test_cli_forget_removes_actioned_ticket(tmp_path, capsys):
     assert "Forgot WEB-201" in capsys.readouterr().out
 
     # Re-opening the store proves the deletion was durable.
-    after = build_system(JirayaConfig(source="memory", state_db_path=db))
+    after = build_system(JirakuConfig(source="memory", state_db_path=db))
     assert "WEB-201" not in after.service.actioned_keys()
     after.inbox.close()
 
 
 def test_cli_forget_unknown_ticket_exits_nonzero(tmp_path, capsys):
-    from jiraya.cli import main
+    from jiraku.cli import main
 
     db = str(tmp_path / "state.db")
     rc = main(["forget", "--source", "memory", "--state-db", db, "NOPE-1"])

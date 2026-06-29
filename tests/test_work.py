@@ -3,23 +3,23 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from jiraya.adapters.work_runner import (
+from jiraku.adapters.work_runner import (
     CopilotWorkAgentRunner,
     NoopWorkAgentRunner,
     _extract_pr_url,
 )
-from jiraya.application import AgentRouter, TriageService
-from jiraya.adapters.agents import default_agents
-from jiraya.adapters.classifier import KeywordClassifier
-from jiraya.adapters.inmemory import (
+from jiraku.application import AgentRouter, TriageService
+from jiraku.adapters.agents import default_agents
+from jiraku.adapters.classifier import KeywordClassifier
+from jiraku.adapters.inmemory import (
     InMemoryEventBus,
     InMemoryInboxRepository,
     InMemoryTicketSource,
 )
-from jiraya.adapters.resolver import RegistryRepoResolver, default_catalog
-from jiraya.adapters.workspace import NoopWorkspaceProvisioner
-from jiraya.composition import JirayaConfig, build_system
-from jiraya.domain import (
+from jiraku.adapters.resolver import RegistryRepoResolver, default_catalog
+from jiraku.adapters.workspace import NoopWorkspaceProvisioner
+from jiraku.composition import JirakuConfig, build_system
+from jiraku.domain import (
     Classification,
     Priority,
     RepoRef,
@@ -96,7 +96,7 @@ def test_copilot_runner_runs_in_workspace_and_parses_pr(tmp_path):
     assert out.started is True
     assert out.opened_pr
     assert out.pr_url == "https://github.com/acme/proj/pull/7"
-    assert out.branch == "jiraya/proj-1"
+    assert out.branch == "jiraku/proj-1"
     assert seen["cwd"] == str(ws)
     assert "PROJ-1" in seen["prompt"]
     # No explicit model and no recommendation -> Copilot "auto".
@@ -223,26 +223,26 @@ def test_no_work_runner_leaves_outcome_work_none():
 # -- composition -------------------------------------------------------------
 
 def test_composition_default_is_noop_runner():
-    system = build_system(JirayaConfig(source="memory"))
+    system = build_system(JirakuConfig(source="memory"))
     assert isinstance(system.work_runner, NoopWorkAgentRunner)
 
 
 def test_composition_work_flag_uses_copilot_runner():
-    system = build_system(JirayaConfig(source="memory", work=True))
+    system = build_system(JirakuConfig(source="memory", work=True))
     assert isinstance(system.work_runner, CopilotWorkAgentRunner)
 
 
 def test_work_implies_real_provisioning():
-    from jiraya.adapters.workspace import GitWorkspaceProvisioner
-    system = build_system(JirayaConfig(source="memory", work=True))
+    from jiraku.adapters.workspace import GitWorkspaceProvisioner
+    system = build_system(JirakuConfig(source="memory", work=True))
     assert isinstance(system.provisioner, GitWorkspaceProvisioner)
 
 
 def test_composition_work_model_is_passed_to_runner():
-    system = build_system(JirayaConfig(source="memory", work=True, work_model="gpt-5-mini"))
+    system = build_system(JirakuConfig(source="memory", work=True, work_model="gpt-5-mini"))
     assert system.work_runner._model == "gpt-5-mini"
 
 
 def test_composition_no_work_model_lets_recommendation_apply():
-    system = build_system(JirayaConfig(source="memory", work=True))
+    system = build_system(JirakuConfig(source="memory", work=True))
     assert system.work_runner._model is None

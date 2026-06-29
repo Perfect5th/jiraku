@@ -142,7 +142,7 @@ class LlmCliWorkAgentRunner:
         model = self._model or classification.recommended_model or self.default_model
         # Empty resolves to the CLI default; "default" is a human-readable label.
         display_model = model or "default"
-        branch = f"jiraya/{ticket.key.lower()}"
+        branch = f"jiraku/{ticket.key.lower()}"
         if answer:
             prompt = _RESUME_TEMPLATE.format(
                 key=ticket.key, answer=answer, branch=branch, sentinel=_SENTINEL,

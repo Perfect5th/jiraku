@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from jiraya.adapters import ReadOnlyTicketSource
-from jiraya.adapters.inmemory import InMemoryTicketSource
-from jiraya.domain import TicketStatus
+from jiraku.adapters import ReadOnlyTicketSource
+from jiraku.adapters.inmemory import InMemoryTicketSource
+from jiraku.domain import TicketStatus
 
 
 def test_readonly_passes_reads_through():

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 
-from jiraya.composition import JirayaConfig, build_system
-from jiraya.domain import PollCycleCompleted, PollCycleStarted, TicketsFetched
+from jiraku.composition import JirakuConfig, build_system
+from jiraku.domain import PollCycleCompleted, PollCycleStarted, TicketsFetched
 
 
 def test_run_once_processes_seed_batch():
-    system = build_system(JirayaConfig())
+    system = build_system(JirakuConfig())
     events = []
     system.bus.subscribe(events.append)
 
@@ -26,7 +26,7 @@ def test_run_once_processes_seed_batch():
 
 
 def test_second_poll_is_idempotent():
-    system = build_system(JirayaConfig())
+    system = build_system(JirakuConfig())
     asyncio.run(system.poller.run_once())
     second = asyncio.run(system.poller.run_once())
     assert second == []
@@ -37,7 +37,7 @@ def test_second_poll_is_idempotent():
 def test_escalated_tickets_are_not_reprocessed():
     # Escalation no longer changes Jira status, so dedupe must come from the
     # poller skipping tickets that already have an open inbox entry.
-    system = build_system(JirayaConfig())
+    system = build_system(JirakuConfig())
     asyncio.run(system.poller.run_once())
     open_before = len(system.inbox.open_entries())
     assert open_before == 4
@@ -48,13 +48,13 @@ def test_escalated_tickets_are_not_reprocessed():
 
 
 def test_run_forever_respects_max_cycles():
-    system = build_system(JirayaConfig(interval_seconds=0.0))
+    system = build_system(JirakuConfig(interval_seconds=0.0))
     asyncio.run(system.poller.run_forever(max_cycles=3))
     assert system.service.metrics.poll_cycles == 3
 
 
 def test_run_forever_stops_on_request():
-    system = build_system(JirayaConfig(interval_seconds=100.0))
+    system = build_system(JirakuConfig(interval_seconds=100.0))
 
     async def drive():
         task = asyncio.create_task(system.poller.run_forever())

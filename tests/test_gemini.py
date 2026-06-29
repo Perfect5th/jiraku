@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import pytest
 
-from jiraya.adapters import (
+from jiraku.adapters import (
     CopilotWorkAgentRunner,
     GeminiWorkAgentRunner,
     NoopWorkAgentRunner,
 )
-from jiraya.adapters.classifier import (
+from jiraku.adapters.classifier import (
     GeminiCliClassifier,
     GeminiUnavailableError,
     KeywordClassifier,
     recommend_model,
 )
-from jiraya.adapters.classifier.recommend import GEMINI_TIERS
-from jiraya.composition import JirayaConfig, build_system
-from jiraya.domain import (
+from jiraku.adapters.classifier.recommend import GEMINI_TIERS
+from jiraku.composition import JirakuConfig, build_system
+from jiraku.domain import (
     Classification,
     Priority,
     RepoRef,
@@ -140,7 +140,7 @@ def test_gemini_runner_omits_model_by_default(tmp_path):
     out = GeminiWorkAgentRunner(runner=fake).run(_ticket(), _cls(), _res(), str(ws))
     assert out.started is True and out.opened_pr
     assert out.pr_url == "https://github.com/acme/proj/pull/7"
-    assert out.branch == "jiraya/x-1"
+    assert out.branch == "jiraku/x-1"
     assert seen["cwd"] == str(ws)
     # No explicit model and no recommendation -> empty (CLI default), shown as "default".
     assert seen["model"] == ""
@@ -206,32 +206,32 @@ def test_gemini_runner_handles_failure_gracefully(tmp_path):
 # -- composition selection ---------------------------------------------------
 
 def test_composition_gemini_classifier_selected():
-    system = build_system(JirayaConfig(source="memory", classifier="gemini"))
+    system = build_system(JirakuConfig(source="memory", classifier="gemini"))
     assert type(system.service._classifier).__name__ == "GeminiCliClassifier"
 
 
 def test_composition_gemini_classifier_fallback_to_keyword():
-    system = build_system(JirayaConfig(
+    system = build_system(JirakuConfig(
         source="memory", classifier="gemini", copilot_fallback_to_keyword=True))
     assert isinstance(system.service._classifier._fallback, KeywordClassifier)
 
 
 def test_composition_gemini_work_runner_selected():
-    system = build_system(JirayaConfig(source="memory", work=True, work_agent="gemini"))
+    system = build_system(JirakuConfig(source="memory", work=True, work_agent="gemini"))
     assert isinstance(system.work_runner, GeminiWorkAgentRunner)
 
 
 def test_composition_default_work_agent_is_copilot():
-    system = build_system(JirayaConfig(source="memory", work=True))
+    system = build_system(JirakuConfig(source="memory", work=True))
     assert isinstance(system.work_runner, CopilotWorkAgentRunner)
 
 
 def test_composition_gemini_work_model_passed_to_runner():
-    system = build_system(JirayaConfig(
+    system = build_system(JirakuConfig(
         source="memory", work=True, work_agent="gemini", work_model="gemini-2.5-pro"))
     assert system.work_runner._model == "gemini-2.5-pro"
 
 
 def test_composition_no_work_runner_when_work_off():
-    system = build_system(JirayaConfig(source="memory", work_agent="gemini"))
+    system = build_system(JirakuConfig(source="memory", work_agent="gemini"))
     assert isinstance(system.work_runner, NoopWorkAgentRunner)

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from jiraya.adapters.classifier import (
+from jiraku.adapters.classifier import (
     CopilotCliClassifier,
     CopilotUnavailableError,
     KeywordClassifier,
 )
-from jiraya.adapters.classifier.copilot_classifier import _extract_json
-from jiraya.domain import Priority, Ticket, TicketCategory
+from jiraku.adapters.classifier.copilot_classifier import _extract_json
+from jiraku.domain import Priority, Ticket, TicketCategory
 
 
 def _ticket(summary: str, description: str = "", labels=()):

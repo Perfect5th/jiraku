@@ -26,7 +26,7 @@ def _slug(ticket_key: str) -> str:
 class NoopWorkspaceProvisioner(WorkspaceProvisioner):
     """Reports the path a clone *would* land at without touching the disk."""
 
-    def __init__(self, root: str = "/tmp/jiraya-workspaces") -> None:
+    def __init__(self, root: str = "/tmp/jiraku-workspaces") -> None:
         self._root = Path(root)
         self.provisioned: list[tuple[str, str]] = []  # (ticket_key, path)
 
@@ -43,7 +43,7 @@ class GitWorkspaceProvisioner(WorkspaceProvisioner):
 
     def __init__(
         self,
-        root: str = "/tmp/jiraya-workspaces",
+        root: str = "/tmp/jiraku-workspaces",
         *,
         runner: CommandRunner | None = None,
         depth: int = 1,

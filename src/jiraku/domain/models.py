@@ -1,4 +1,4 @@
-"""Core domain entities and value objects for jiraya.
+"""Core domain entities and value objects for jiraku.
 
 This module is pure business logic with **no external dependencies** (stdlib
 only). It is the heart of the hexagonal architecture: everything else depends
@@ -155,7 +155,7 @@ class ValidationResult:
 class WorkResult:
     """Outcome of a worker agent actually starting work in a provisioned repo.
 
-    Produced by the :class:`~jiraya.ports.outbound.WorkAgentRunner` after a
+    Produced by the :class:`~jiraku.ports.outbound.WorkAgentRunner` after a
     ticket transitions: e.g. the Copilot CLI ran in the cloned workspace and
     opened a pull request.
     """
@@ -280,7 +280,7 @@ class InboxStatus(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class InboxEntry:
-    """An exception surfaced to the jiraya dashboard for human review.
+    """An exception surfaced to the jiraku dashboard for human review.
 
     Produced whenever the system cannot confidently classify a ticket or a
     worker agent decides the ticket needs clarification.

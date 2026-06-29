@@ -1,10 +1,10 @@
-# jiraya repo registry — the empirical ticket -> repository mapping.
+# jiraku repo registry — the empirical ticket -> repository mapping.
 #
 # Seed this from Jira dev-status / commit-mining: the issue -> commit -> repo
 # links Jira already records give you one authoritative row per project on day
 # one (plus an eval set). Hand-curate from there. Pass with:
 #
-#   uv run jiraya tui --repo-registry examples/repo_registry.yaml
+#   uv run jiraku tui --repo-registry examples/repo_registry.yaml
 #
 # Each entry maps a repository to the Jira projects that live in it and the
 # prose/code-token keywords used to place tickets the project key can't.

@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from jiraya.adapters.agents import default_agents
-from jiraya.adapters.classifier import KeywordClassifier
-from jiraya.adapters.inmemory import (
+from jiraku.adapters.agents import default_agents
+from jiraku.adapters.classifier import KeywordClassifier
+from jiraku.adapters.inmemory import (
     InMemoryEventBus,
     InMemoryInboxRepository,
     InMemoryTicketSource,
 )
-from jiraya.adapters.resolver import (
+from jiraku.adapters.resolver import (
     CompositeRepoResolver,
     InMemoryLearnedRulesStore,
     KeywordRepoResolver,
@@ -20,11 +20,11 @@ from jiraya.adapters.resolver import (
     RegistryRepoResolver,
     RepoCatalogEntry,
 )
-from jiraya.adapters.work_runner import NoopWorkAgentRunner
-from jiraya.adapters.workspace import GitWorkspaceProvisioner
-from jiraya.application import AgentRouter, TriageService
-from jiraya.domain import EscalationStage, RepoRef, TriageAction
-from jiraya.ports import WorkspaceProvisionError
+from jiraku.adapters.work_runner import NoopWorkAgentRunner
+from jiraku.adapters.workspace import GitWorkspaceProvisioner
+from jiraku.application import AgentRouter, TriageService
+from jiraku.domain import EscalationStage, RepoRef, TriageAction
+from jiraku.ports import WorkspaceProvisionError
 
 
 # -- provisioner error behaviour --------------------------------------------
@@ -33,7 +33,7 @@ def test_git_provisioner_raises_rich_error_on_clone_failure():
     def boom(cmd):
         raise subprocess.CalledProcessError(128, cmd, stderr="fatal: not found\n")
 
-    prov = GitWorkspaceProvisioner(root="/tmp/jiraya-test-ws", runner=boom)
+    prov = GitWorkspaceProvisioner(root="/tmp/jiraku-test-ws", runner=boom)
     with pytest.raises(WorkspaceProvisionError) as ei:
         prov.provision(RepoRef("acme/x", "https://example.invalid/x.git"), "PROJ-1")
 

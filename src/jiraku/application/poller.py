@@ -1,4 +1,4 @@
-"""The polling service — jiraya's scheduled background heartbeat.
+"""The polling service — jiraku's scheduled background heartbeat.
 
 Periodically asks the ticket source for fresh work and runs every ticket
 through the triage harness. Blocking work (Jira HTTP calls, Copilot CLI

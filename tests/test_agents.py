@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from jiraya.adapters.agents import (
+from jiraku.adapters.agents import (
     BugAgent,
     DocumentationAgent,
     FeatureAgent,
     default_agents,
 )
-from jiraya.domain import Classification, Priority, Ticket, TicketCategory
+from jiraku.domain import Classification, Priority, Ticket, TicketCategory
 
 
 def _ticket(summary: str, description: str = "", labels=()):

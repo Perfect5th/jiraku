@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from jiraya.adapters import ReadOnlyTicketSource
-from jiraya.cli import load_env_file
-from jiraya.composition import JiraConfig, JirayaConfig, build_system
+from jiraku.adapters import ReadOnlyTicketSource
+from jiraku.cli import load_env_file
+from jiraku.composition import JiraConfig, JirakuConfig, build_system
 
 
 def test_jira_config_accepts_jira_base_alias():
@@ -24,17 +24,17 @@ def test_is_configured_requires_all_three():
 
 
 def test_resolve_source_auto_detects():
-    configured = JirayaConfig(jira=JiraConfig(base_url="https://x", email="e",
+    configured = JirakuConfig(jira=JiraConfig(base_url="https://x", email="e",
                                               api_token="t"))
     assert configured.resolve_source() == "jira"
-    assert JirayaConfig().resolve_source() == "memory"
-    assert JirayaConfig(source="memory",
+    assert JirakuConfig().resolve_source() == "memory"
+    assert JirakuConfig(source="memory",
                         jira=JiraConfig(base_url="https://x", email="e",
                                         api_token="t")).resolve_source() == "memory"
 
 
 def test_build_system_wraps_jira_source_in_dry_run():
-    cfg = JirayaConfig(
+    cfg = JirakuConfig(
         source="jira",
         dry_run=True,
         jira=JiraConfig(base_url="https://x.atlassian.net", email="e", api_token="t"),
@@ -46,7 +46,7 @@ def test_build_system_wraps_jira_source_in_dry_run():
 
 
 def test_build_system_memory_is_not_wrapped():
-    system = build_system(JirayaConfig())
+    system = build_system(JirakuConfig())
     assert system.source_mode == "memory"
     assert system.dry_run is False
     assert not isinstance(system.source, ReadOnlyTicketSource)
@@ -102,7 +102,7 @@ def _args(**overrides):
 
 
 def test_cli_defaults_to_dry_run_against_real_jira(monkeypatch):
-    from jiraya.cli import _config_from_args
+    from jiraku.cli import _config_from_args
     monkeypatch.setenv("JIRA_BASE", "https://x.atlassian.net")
     monkeypatch.setenv("JIRA_EMAIL", "e")
     monkeypatch.setenv("JIRA_API_TOKEN", "t")
@@ -113,7 +113,7 @@ def test_cli_defaults_to_dry_run_against_real_jira(monkeypatch):
 
 
 def test_cli_apply_enables_writes(monkeypatch):
-    from jiraya.cli import _config_from_args
+    from jiraku.cli import _config_from_args
     monkeypatch.setenv("JIRA_BASE", "https://x.atlassian.net")
     monkeypatch.setenv("JIRA_EMAIL", "e")
     monkeypatch.setenv("JIRA_API_TOKEN", "t")
@@ -123,7 +123,7 @@ def test_cli_apply_enables_writes(monkeypatch):
 
 
 def test_cli_memory_source_is_never_dry_run(monkeypatch):
-    from jiraya.cli import _config_from_args
+    from jiraku.cli import _config_from_args
     for key in ("JIRA_BASE", "JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"):
         monkeypatch.delenv(key, raising=False)
     cfg = _config_from_args(_args())
@@ -132,7 +132,7 @@ def test_cli_memory_source_is_never_dry_run(monkeypatch):
 
 
 def test_cli_parses_gemini_classifier_and_work_agent():
-    from jiraya.cli import build_parser, _config_from_args
+    from jiraku.cli import build_parser, _config_from_args
     args = build_parser().parse_args(
         ["run", "--source", "memory", "--classifier", "gemini",
          "--work", "--work-agent", "gemini", "--work-model", "gemini-2.5-pro"])
@@ -143,6 +143,6 @@ def test_cli_parses_gemini_classifier_and_work_agent():
 
 
 def test_cli_work_agent_defaults_to_copilot():
-    from jiraya.cli import build_parser, _config_from_args
+    from jiraku.cli import build_parser, _config_from_args
     args = build_parser().parse_args(["run", "--source", "memory", "--work"])
     assert _config_from_args(args).work_agent == "copilot"

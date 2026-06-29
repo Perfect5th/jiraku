@@ -1,4 +1,4 @@
-"""Sample tickets so jiraya is runnable and demoable with zero configuration."""
+"""Sample tickets so jiraku is runnable and demoable with zero configuration."""
 
 from __future__ import annotations
 

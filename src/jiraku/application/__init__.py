@@ -1,4 +1,4 @@
-"""jiraya application layer — the triage harness orchestration."""
+"""jiraku application layer — the triage harness orchestration."""
 
 from __future__ import annotations
 

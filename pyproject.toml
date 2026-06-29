@@ -1,5 +1,5 @@
 [project]
-name = "jiraya"
+name = "jiraku"
 version = "0.6.1"
 description = "Agent-powered Jira triage agent with a TUI dashboard"
 requires-python = ">=3.12"
@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-jiraya = "jiraya.cli:main"
+jiraku = "jiraku.cli:main"
 
 [dependency-groups]
 dev = [

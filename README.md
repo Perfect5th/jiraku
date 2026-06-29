@@ -1,4 +1,4 @@
-# jiraya — agent-powered Jira triage
+# jiraku — agent-powered Jira triage
 
 An automated triage system that polls Jira for new / untriaged tickets,
 classifies their intent with an LLM agent, hands them off to specialized worker
@@ -7,7 +7,7 @@ agents, and either transitions them to **In Progress** or surfaces them to a
 
 This repository contains the **triage agent harness** and the **TUI dashboard**.
 
-![The jiraya TUI dashboard: a Tickets table on the left, a live Agent activity
+![The jiraku TUI dashboard: a Tickets table on the left, a live Agent activity
 log and an exceptions Inbox on the right.](examples/screenshot.png)
 
 The dashboard shows tickets being classified, routed to worker agents and either
@@ -16,12 +16,12 @@ with a live activity log and running metrics across the top.
 
 ## Architecture
 
-jiraya uses a **hexagonal (ports & adapters)** architecture so the business
+jiraku uses a **hexagonal (ports & adapters)** architecture so the business
 logic is fully decoupled from Jira, the LLM, and the front-end:
 
 ```
             ┌──────────────────────── driving adapters ────────────────────────┐
-            │   TUI dashboard (Textual)            CLI (jiraya run / tui)       │
+            │   TUI dashboard (Textual)            CLI (jiraku run / tui)       │
             └───────────────┬───────────────────────────────┬──────────────────┘
                             │ subscribe (events)             │ use cases
                     ┌───────▼───────────────────────────────▼───────┐
@@ -125,12 +125,12 @@ with `--work-agent {copilot,gemini}`.
 
 ```bash
 # Resolve repo, clone it, run the work agent, and open a PR (real writes — use --apply)
-uv run jiraya run --once --apply \
+uv run jiraku run --once --apply \
   --repo-registry examples/repo_registry.yaml \
   --work
 
 # Same, but drive the Gemini CLI as the work agent
-uv run jiraya run --once --apply \
+uv run jiraku run --once --apply \
   --repo-registry examples/repo_registry.yaml \
   --work --work-agent gemini
 ```
@@ -163,7 +163,7 @@ ticket's **existing workspace/branch** (no re-triage, no status change) and
 opens/updates the PR. From the shell:
 
 ```bash
-uv run jiraya work PROJ-123 "Address review feedback: rename the flag and add a test" \
+uv run jiraku work PROJ-123 "Address review feedback: rename the flag and add a test" \
   --work --apply --repo-registry examples/repo_registry.yaml
 ```
 
@@ -190,27 +190,27 @@ agent accepts. An explicit `--work-model` always overrides the recommendation.
 
 ```bash
 # Cheap classifier, per-ticket recommended work model
-uv run jiraya run --once --apply --classifier copilot \
+uv run jiraku run --once --apply --classifier copilot \
   --classifier-model gpt-5-mini --work
 
 # Pin both explicitly
-uv run jiraya run --once --apply --classifier copilot \
+uv run jiraku run --once --apply --classifier copilot \
   --classifier-model gpt-5-mini --work --work-model claude-sonnet-4.5
 
 # Gemini end to end (classifier + work agent)
-uv run jiraya run --once --apply --classifier gemini \
+uv run jiraku run --once --apply --classifier gemini \
   --work --work-agent gemini
 ```
 
 ```bash
 # Resolve against your registry, persist what you teach, and clone workspaces
-uv run jiraya run --once --apply \
+uv run jiraku run --once --apply \
   --repo-registry examples/repo_registry.yaml \
-  --learned-rules ~/.config/jiraya/learned-rules.yaml \
+  --learned-rules ~/.config/jiraku/learned-rules.yaml \
   --provision
 
 # Don't escalate on unresolved repos (skip the repo confidence gate)
-uv run jiraya run --once --no-require-repo
+uv run jiraku run --once --no-require-repo
 ```
 
 ## Install
@@ -226,7 +226,7 @@ uv sync
 Launch the real-time dashboard (default command):
 
 ```bash
-uv run jiraya            # or: uv run jiraya tui
+uv run jiraku            # or: uv run jiraku tui
 ```
 
 Dashboard keys: `p` poll now · `g` inject a demo ticket · `d` open the
@@ -256,27 +256,27 @@ ticket still can't be actioned). In dry-run mode comments are **not** posted and
 re-triage performs no writes.
 
 > The interactive TUI needs a real terminal. In CI / headless contexts use
-> `jiraya run` (below) or drive the app via Textual's `run_test()` pilot.
+> `jiraku run` (below) or drive the app via Textual's `run_test()` pilot.
 
 Run the harness headlessly:
 
 ```bash
-uv run jiraya run --once          # one poll cycle, print a summary
-uv run jiraya run --cycles 3      # three cycles then exit
-uv run jiraya run                 # poll forever (Ctrl-C to stop)
+uv run jiraku run --once          # one poll cycle, print a summary
+uv run jiraku run --cycles 3      # three cycles then exit
+uv run jiraku run                 # poll forever (Ctrl-C to stop)
 ```
 
 ### Classifier selection
 
 ```bash
 # Use the GitHub Copilot CLI as the classification agent
-uv run jiraya run --once --classifier copilot
+uv run jiraku run --once --classifier copilot
 
 # Use the Gemini CLI as the classification agent
-uv run jiraya run --once --classifier gemini
+uv run jiraku run --once --classifier gemini
 
 # Fall back to the deterministic keyword classifier if the LLM CLI is unavailable
-uv run jiraya run --once --classifier copilot --copilot-fallback
+uv run jiraku run --once --classifier copilot --copilot-fallback
 ```
 
 The Copilot and Gemini classifiers are interchangeable LLM-CLI adapters over a
@@ -285,12 +285,12 @@ and parse the category, confidence and recommended model. The Gemini classifier
 runs read-only (`--approval-mode plan`) since classification never writes.
 `--copilot-fallback` applies to whichever LLM classifier is selected.
 
-By default jiraya runs fully offline against an in-memory Jira seeded with a
+By default jiraku runs fully offline against an in-memory Jira seeded with a
 representative batch of tickets, so it is runnable with zero configuration.
 
 ## Connecting to real Jira
 
-jiraya authenticates to **Jira Cloud** with your email + an API token
+jiraku authenticates to **Jira Cloud** with your email + an API token
 ([create one here](https://id.atlassian.com/manage-profile/security/api-tokens))
 using HTTP Basic auth, and reads issues with the current
 `/rest/api/3/search/jql` endpoint (token pagination).
@@ -308,7 +308,7 @@ JIRA_JQL=assignee = currentUser() AND status in ("To Do", "Untriaged") ORDER BY 
 
 When credentials are present, `--source auto` (the default) selects real Jira;
 otherwise it falls back to the in-memory demo. The chosen mode is always printed
-at startup — jiraya never silently degrades.
+at startup — jiraku never silently degrades.
 
 ### Dry-run vs. apply (write safety)
 
@@ -319,13 +319,13 @@ perform transitions.
 
 ```bash
 # Preview triage of your real tickets — no writes (default for real Jira)
-uv run jiraya run --once
+uv run jiraku run --once
 
 # Actually transition actionable tickets to In Progress
-uv run jiraya run --once --apply
+uv run jiraku run --once --apply
 
 # Live dashboard over real Jira, read-only
-uv run jiraya tui --classifier copilot
+uv run jiraku tui --classifier copilot
 ```
 
 Escalations are surfaced to the dashboard inbox **without** changing the
@@ -341,13 +341,13 @@ tickets, the open inbox items (which you can still answer), the cumulative
 metrics, and each ticket's provisioned workspace. The poller also skips tickets
 it has already actioned, so nothing is re-triaged after a restart.
 
-The `tui` command persists by default to `$XDG_STATE_HOME/jiraya/state.db`
-(`~/.local/state/jiraya/state.db`). Override or disable it:
+The `tui` command persists by default to `$XDG_STATE_HOME/jiraku/state.db`
+(`~/.local/state/jiraku/state.db`). Override or disable it:
 
 ```bash
-uv run jiraya tui --state-db /path/to/state.db   # custom location
-uv run jiraya tui --no-state                      # in-memory only
-uv run jiraya run --once --state-db state.db      # opt-in for headless runs
+uv run jiraku tui --state-db /path/to/state.db   # custom location
+uv run jiraku tui --no-state                      # in-memory only
+uv run jiraku run --once --state-db state.db      # opt-in for headless runs
 ```
 
 (`run` and `work` don't persist unless you pass `--state-db`.)
@@ -361,8 +361,8 @@ next poll — use the `x` key in the dashboard (a confirm prompt guards the
 action) or the CLI:
 
 ```bash
-uv run jiraya forget PROJ-123                    # default dashboard store
-uv run jiraya forget PROJ-123 --state-db state.db
+uv run jiraku forget PROJ-123                    # default dashboard store
+uv run jiraku forget PROJ-123 --state-db state.db
 ```
 
 Forgetting reverses that ticket's contribution to the metrics and persists the

@@ -89,7 +89,7 @@ class _NullLedger:
 
 
 class TriageService:
-    """Implements the inbound :class:`~jiraya.ports.inbound.TriageService` port."""
+    """Implements the inbound :class:`~jiraku.ports.inbound.TriageService` port."""
 
     def __init__(
         self,
@@ -612,7 +612,7 @@ class TriageService:
             branch=branch,
         )
         self._inbox.add(entry)
-        # Per the spec, exceptions are surfaced to the jiraya dashboard for human
+        # Per the spec, exceptions are surfaced to the jiraku dashboard for human
         # review; the ticket's Jira status is deliberately left untouched.
         self._events.publish(TicketEscalated(entry=entry))
         self._log(
@@ -714,7 +714,7 @@ class TriageService:
     def _repo_reason(resolution: RepoResolution) -> str:
         if resolution.repo is None:
             return ("Could not resolve which repository this ticket belongs to "
-                    "— respond with a repo (clone URL) to unblock and teach jiraya.")
+                    "— respond with a repo (clone URL) to unblock and teach jiraku.")
         return (
             f"Low confidence ({resolution.confidence:.0%}) resolving repository "
             f"'{resolution.repo}' — confirm or correct the repo to proceed."

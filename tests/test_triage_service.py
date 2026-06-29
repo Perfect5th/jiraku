@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from jiraya.adapters.inmemory import InMemoryEventBus, InMemoryInboxRepository
-from jiraya.application import AgentRouter, TriageService
-from jiraya.domain import (
+from jiraku.adapters.inmemory import InMemoryEventBus, InMemoryInboxRepository
+from jiraku.application import AgentRouter, TriageService
+from jiraku.domain import (
     Classification,
     Priority,
     Ticket,

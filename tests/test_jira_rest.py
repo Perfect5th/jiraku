@@ -5,8 +5,8 @@ import json
 import httpx
 import pytest
 
-from jiraya.adapters.jira import JiraRestTicketSource
-from jiraya.domain import Priority, TicketStatus
+from jiraku.adapters.jira import JiraRestTicketSource
+from jiraku.domain import Priority, TicketStatus
 
 _ADF = {
     "type": "doc",

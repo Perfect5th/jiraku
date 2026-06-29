@@ -1,4 +1,4 @@
-"""Command-line entry point for jiraya."""
+"""Command-line entry point for jiraku."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-from .composition import JiraConfig, JirayaConfig, build_system
+from .composition import JiraConfig, JirakuConfig, build_system
 from .domain import (
     ActivityLevel,
     ActivityLogged,
@@ -59,7 +59,7 @@ def load_env_file(path: str | os.PathLike[str], *, override: bool = False) -> bo
 def _default_state_db() -> str:
     base = os.environ.get("XDG_STATE_HOME") or os.path.join(
         os.path.expanduser("~"), ".local", "state")
-    return os.path.join(base, "jiraya", "state.db")
+    return os.path.join(base, "jiraku", "state.db")
 
 
 def _resolve_state_db(args: argparse.Namespace) -> str | None:
@@ -71,15 +71,15 @@ def _resolve_state_db(args: argparse.Namespace) -> str | None:
     return _default_state_db() if getattr(args, "default_state", False) else None
 
 
-def _config_from_args(args: argparse.Namespace) -> JirayaConfig:
+def _config_from_args(args: argparse.Namespace) -> JirakuConfig:
     jira = JiraConfig.from_env()
     # Safety: writing to a real Jira board requires an explicit --apply. Without
     # it (and unless using the in-memory demo) we default to a no-write dry run
     # so a bare invocation never mutates a production board by surprise.
-    probe = JirayaConfig(source=args.source, jira=jira)
+    probe = JirakuConfig(source=args.source, jira=jira)
     targets_real_jira = probe.resolve_source() == "jira"
     dry_run = args.dry_run or (targets_real_jira and not args.apply)
-    return JirayaConfig(
+    return JirakuConfig(
         classifier=args.classifier,
         source=args.source,
         interval_seconds=args.interval,
@@ -225,10 +225,10 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_tui(args: argparse.Namespace) -> int:
     _bootstrap_env(args)
-    from .tui import JirayaApp  # imported lazily so `run` works without textual TTY
+    from .tui import JirakuApp  # imported lazily so `run` works without textual TTY
 
     config = _config_from_args(args)
-    JirayaApp(config=config, poll_interval=args.interval).run()
+    JirakuApp(config=config, poll_interval=args.interval).run()
     return 0
 
 
@@ -271,7 +271,7 @@ def cmd_forget(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="jiraya",
+        prog="jiraku",
         description="Agent-powered Jira triage agent with a TUI dashboard.",
     )
     sub = parser.add_subparsers(dest="command")
